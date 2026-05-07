@@ -1,16 +1,25 @@
 /**
  * @skyemeta/skyegate — condition-based content gating for Vercel / Next.js.
  *
- * Talks to skyemeta.com/api/verify with a SKYE license key, asks InsumerAPI
- * (via the SkyeMeta proxy) whether a wallet meets a set of conditions, and
- * returns a signed JWT proving the result. Server endpoints validate the JWT
- * via JWKS before serving gated content.
+ * SkyeGate is a SkyeMeta product. The wallet verification engine it relies on
+ * — signed boolean attestations over wallet conditions — is InsumerAPI, an
+ * independent product of InsumerModel. SkyeGate is powered by InsumerAPI;
+ * they are separate companies.
+ *
+ * The SDK talks to the SkyeMeta proxy (skyemeta.com/api/verify) with a SKYE
+ * license key. The proxy authenticates the key, forwards the request to
+ * InsumerAPI, and returns a signed JWT. Server endpoints validate the JWT via
+ * JWKS before serving gated content.
+ *
+ * Trust model: every result is cryptographically signed (ECDSA P-256 + JWKS),
+ * independently verifiable by any third party. Trust the math, not a company —
+ * including us.
  *
  * Bring your own wallet stack — wagmi, RainbowKit, ConnectKit, Privy, etc.
  * This SDK only provides the gating layer.
  *
- * Companion to the SkyeGate Pro WordPress plugin: same SKYE license key,
- * same conditions, same proxy. One license, two stacks.
+ * Companion to the SkyeGate WordPress plugin: same SKYE license key, same
+ * conditions, same proxy. One license, two stacks.
  */
 
 import { jwtVerify, createRemoteJWKSet, type JWTPayload } from 'jose';

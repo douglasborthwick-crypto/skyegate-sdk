@@ -1,6 +1,8 @@
 # @skyemeta/skyegate
 
-Condition-based content gating for Vercel / Next.js. Wallet-verified access to pages, posts, files, or API routes — gated by a signed boolean from [InsumerAPI](https://insumermodel.com/developers/) (token balance, NFT ownership, EAS attestation, or Farcaster identity). Companion to the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skyegate/) — same SKYE license key, same conditions, same proxy. **One license, two stacks.**
+**SkyeGate Pro for Vercel.** Condition-based content gating for Next.js apps — wallet-verified access to pages, posts, files, or API routes. Gate on token balance, NFT ownership, EAS attestation, or Farcaster identity. Companion to the [SkyeGate WordPress plugin](https://skyemeta.com/skyegate/) — same SKYE license key, same conditions, same proxy. **One license, two stacks.**
+
+> **Powered by [InsumerAPI](https://insumermodel.com/developers/), the wallet verification engine.** SkyeGate is a [SkyeMeta](https://skyemeta.com) product; InsumerAPI is an independent product of [InsumerModel](https://insumermodel.com). Two companies, one verification primitive.
 
 ```bash
 npm install @skyemeta/skyegate
@@ -122,7 +124,7 @@ your Next.js app
   ↓
 skyemeta.com/api/verify   ← SkyeMeta proxy validates SKYE key + domain
   ↓
-api.insumermodel.com      ← signed boolean returned, no balances exposed
+api.insumermodel.com      ← InsumerAPI returns a signed boolean; no balances leak
   ↓
 JWT signed with ECDSA P-256
   ↓ POSTed to your server
@@ -132,7 +134,7 @@ validateContentToken(jwt) ← jose + JWKS, signature + issuer + expiry + conditi
 gated content delivered
 ```
 
-The wallet's actual balances never reach your server or your customers — only the signed yes-or-no on whether the condition was met.
+Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently verifiable by any third party. **Trust the math, not a company — including us.** The wallet's actual balances never reach your server or your customers; only the signed yes-or-no on whether the condition was met.
 
 ## Security notes
 

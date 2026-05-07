@@ -1,7 +1,7 @@
 {
   "name": "@skyemeta/skyegate",
   "version": "0.1.0",
-  "description": "Condition-based content gating for Vercel/Next.js apps. Wallet-verified access using InsumerAPI's signed attestations. Companion to the SkyeGate Pro WordPress plugin — same SKYE license key, same conditions, same proxy.",
+  "description": "SkyeGate Pro for Vercel — condition-based content gating for Next.js apps. Powered by InsumerAPI. Companion to the SkyeGate WordPress plugin: same SKYE license key, one license, two stacks.",
   "type": "module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
