@@ -57,6 +57,12 @@ export interface VerifyConditionsParams {
   walletType?: 'evm' | 'solana';
   /** Override the verification endpoint. Defaults to the production proxy. */
   endpoint?: string;
+  /**
+   * Domain to claim for license-binding. Defaults to `window.location.hostname`
+   * in browsers; required for SSR / Node.js calls. Localhost, `*.vercel.app`,
+   * and `*.local` are treated as dev/preview and never bind the license.
+   */
+  domain?: string;
 }
 
 export interface VerifyConditionsResult {
@@ -142,14 +148,21 @@ export async function verifyConditions(
   };
   body[walletField] = params.address;
 
+  const domain =
+    params.domain ??
+    (typeof window !== 'undefined' && window.location ? window.location.hostname : undefined);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-SkyeGate-License': params.licenseKey,
+  };
+  if (domain) headers['X-SkyeGate-Domain'] = domain;
+
   let response: Response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-SkyeGate-Key': params.licenseKey,
-      },
+      headers,
       body: JSON.stringify(body),
     });
   } catch (err) {
