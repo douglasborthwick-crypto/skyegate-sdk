@@ -12,7 +12,12 @@ Bring your own wallet stack — wagmi, RainbowKit, ConnectKit, Privy, whatever y
 
 ## Quick start
 
-You need a SKYE license key. [Buy one for $49/mo or $350/yr at skyemeta.com/skyegate](https://skyemeta.com/skyegate/) — same key works on the WordPress plugin and this SDK.
+Get a key:
+
+- **[Annual — $350/yr](https://buy.stripe.com/8x26oA9F6eWAeAC7S804805)** (save 40%)
+- [Monthly — $49/mo](https://buy.stripe.com/eVqbIU18A6q43VY7S804800)
+
+Same key works on the [WordPress plugin](https://skyemeta.com/skyegate/) and this SDK — one license, two stacks. See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the comparison and FAQ.
 
 ### 1. Client: verify the wallet
 
