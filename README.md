@@ -77,7 +77,7 @@ Low-level imperative call. The React hook + component use this internally.
 |---|---|---|
 | `address` | `string` | Wallet address (EVM hex or Solana base58) |
 | `conditions` | `Condition[]` | One or more conditions; `pass=true` requires *all* to be met |
-| `licenseKey` | `string` | Your `SKYE_xxx...` key |
+| `licenseKey` | `string` | Your `SKYE-XXXX-XXXX-XXXX` key |
 | `walletType` | `'evm'` \| `'solana'` | Default `'evm'` |
 | `endpoint` | `string` | Override the proxy URL (advanced) |
 
@@ -138,10 +138,10 @@ Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently 
 
 ## Security notes
 
-- **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. Domain locking on the proxy prevents reuse from other origins. If your key leaks, rotate it from `/account/` on skyemeta.com.
+- **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. The proxy auto-binds your key to your production domain on first use; subsequent calls from any other apex are rejected. To move a key to a different domain, contact support.
 - **Replay protection.** Pass `expectedConditions` to `validateContentToken` to ensure a JWT earned for one route can't unlock another.
-- **JWT freshness.** JWTs expire after 30 minutes (set by InsumerAPI). Your route gets a fresh one on each verification.
-- **CORS.** The proxy is open by default — domain locking happens at the SKYE-key validation layer, not via origin headers.
+- **JWT freshness.** JWTs are short-lived; `validateContentToken` enforces the `exp` claim via `jose`. Each verification produces a fresh JWT.
+- **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind — handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
 
 ## Comparison with `@skyemeta/skyegate` for WordPress
 

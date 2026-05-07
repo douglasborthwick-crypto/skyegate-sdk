@@ -36,7 +36,7 @@ export interface Condition {
   chainId?: number | string;
   /** Minimum balance for `token_balance`. Decimals applied per-token. */
   threshold?: number;
-  /** Decimals for `token_balance` (default 18 for EVM, 9 for Solana, 6 for USDC etc.). */
+  /** Decimals for `token_balance`. Token-specific — check the token's documentation. */
   decimals?: number;
   /** EAS template name, e.g. `"coinbase_verified_account"`, `"gitcoin_passport_active"`. */
   template?: string;
@@ -51,7 +51,7 @@ export interface VerifyConditionsParams {
   address: string;
   /** One or more conditions; pass=true requires every condition to be met. */
   conditions: Condition[];
-  /** Your SKYE license key (`SKYE_xxx...`). Provision one at skyemeta.com/skyegate/. */
+  /** Your SKYE license key (format: `SKYE-XXXX-XXXX-XXXX`). Provision one at skyemeta.com/skyegate/. */
   licenseKey: string;
   /** `"evm"` (default) or `"solana"`. Picks which body field carries the address. */
   walletType?: 'evm' | 'solana';
