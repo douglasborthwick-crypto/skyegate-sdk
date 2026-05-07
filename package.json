@@ -1,0 +1,70 @@
+{
+  "name": "@skyemeta/skyegate",
+  "version": "0.1.0",
+  "description": "Condition-based content gating for Vercel/Next.js apps. Wallet-verified access using InsumerAPI's signed attestations. Companion to the SkyeGate Pro WordPress plugin — same SKYE license key, same conditions, same proxy.",
+  "type": "module",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "types": "./build/index.d.ts"
+    },
+    "./react": {
+      "import": "./build/react.js",
+      "types": "./build/react.d.ts"
+    }
+  },
+  "files": [
+    "build",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "skyegate",
+    "skyemeta",
+    "condition-based-access",
+    "wallet-auth",
+    "token-gating",
+    "nft-gating",
+    "farcaster",
+    "vercel",
+    "nextjs",
+    "react",
+    "web3",
+    "ecdsa",
+    "jwt",
+    "attestation"
+  ],
+  "author": "Douglas Borthwick",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/douglasborthwick-crypto/skyegate-sdk.git"
+  },
+  "homepage": "https://skyemeta.com/skyegate/vercel/",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "jose": "^5.9.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.0.0"
+  }
+}
