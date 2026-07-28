@@ -119,7 +119,7 @@ Same vocabulary as the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skye
 | `eas_attestation` | Ethereum Attestation Service templates (Coinbase Verified, Gitcoin Passport, …) |
 | `farcaster_id` | Wallet linked to a Farcaster identity |
 
-32 chains supported (the same set as SkyeGate Pro). See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list.
+37 chains supported (the same set as SkyeGate Pro). See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list.
 
 ## How it works
 

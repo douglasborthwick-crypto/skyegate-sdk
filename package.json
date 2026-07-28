@@ -41,7 +41,7 @@
     "jwt",
     "attestation"
   ],
-  "author": "Douglas Borthwick",
+  "author": "Skye Meta Corp.",
   "license": "MIT",
   "repository": {
     "type": "git",
