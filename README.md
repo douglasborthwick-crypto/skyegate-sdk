@@ -144,7 +144,8 @@ Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently 
 ## Security notes
 
 - **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. The proxy auto-binds your key to your production domain on first use; subsequent calls from any other apex are rejected. To move a key to a different domain, contact support.
-- **Replay protection.** Pass `expectedConditions` to `validateContentToken` to ensure a JWT earned for one route can't unlock another.
+- **Cross-condition replay protection.** Pass `expectedConditions` to `validateContentToken` to ensure a JWT earned for one route can't unlock another. This scopes a token to a condition; it does not bind it to whoever presents it. See **Wallet ownership** below.
+- **Wallet ownership.** The address passed to `verifyConditions` is supplied by the caller. The JWT attests that *this address* meets the conditions, signed by InsumerAPI and verified against its JWKS. It does **not** attest that whoever presents the JWT controls that address, and `validateContentToken` does not bind the token to its presenter. Addresses meeting a given condition are public chain state. If your gate needs proof of control, require a wallet signature (EIP-191, or EIP-1271 for smart wallets) in your own route before calling `validateContentToken`. A built-in signature step is planned for a future release.
 - **JWT freshness.** JWTs are short-lived; `validateContentToken` enforces the `exp` claim via `jose`. Each verification produces a fresh JWT.
 - **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind — handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
 

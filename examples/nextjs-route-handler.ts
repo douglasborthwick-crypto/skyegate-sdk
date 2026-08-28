@@ -22,7 +22,9 @@ export async function POST(req: Request) {
   }
 
   const result = await validateContentToken(body.jwt, {
-    // Replay protection — the JWT must have been earned for *this* condition.
+    // Cross-condition replay protection: the JWT must have been earned for
+    // *this* condition, not for another route. It does not bind the JWT to
+    // whoever presents it. See "Wallet ownership" in the README.
     expectedConditions: [{ type: 'farcaster_id' }],
   });
 
@@ -32,6 +34,7 @@ export async function POST(req: Request) {
 
   return Response.json({
     secret:
-      'This response was never in the page source. Your wallet unlocked it after a server-side, ECDSA-signed verification.',
+      'This response was never in the page source. It arrived after the server ' +
+      'verified a signed InsumerAPI attestation that this address meets the condition.',
   });
 }
