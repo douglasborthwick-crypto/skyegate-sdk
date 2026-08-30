@@ -25,6 +25,11 @@ export interface UseSkyeGateOptions {
   walletType?: VerifyConditionsParams['walletType'];
   /** Override the verification endpoint. */
   endpoint?: string;
+  /**
+   * Wallet ownership proof token from `proveWalletOwnership` — proves the
+   * visitor controls the address, not just that they supplied it.
+   */
+  walletProof?: string;
   /** When false, the hook stays idle and never calls the proxy. Default true. */
   enabled?: boolean;
 }
@@ -72,6 +77,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
       licenseKey: options.licenseKey,
       walletType: options.walletType,
       endpoint: options.endpoint,
+      walletProof: options.walletProof,
     })
       .then((result) => {
         if (cancelled) return;
@@ -101,6 +107,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
     options.licenseKey,
     options.walletType,
     options.endpoint,
+    options.walletProof,
     conditionsKey,
     tick,
   ]);

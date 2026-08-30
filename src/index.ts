@@ -63,6 +63,12 @@ export interface VerifyConditionsParams {
    * and `*.local` are treated as dev/preview and never bind the license.
    */
   domain?: string;
+  /**
+   * Wallet ownership proof token from {@link proveWalletOwnership}. Proves the
+   * person presenting the address actually controls it — without it, the
+   * attestation only says the address meets the conditions. EVM wallets only.
+   */
+  walletProof?: string;
 }
 
 export interface VerifyConditionsResult {
@@ -103,6 +109,7 @@ export interface ValidateContentTokenResult {
 // ── Constants ─────────────────────────────────────────────────────────────
 
 const DEFAULT_VERIFY_ENDPOINT = 'https://skyemeta.com/api/verify';
+const DEFAULT_PROOF_ENDPOINT = 'https://skyemeta.com/api/wallet-proof';
 const DEFAULT_JWKS_URL = 'https://api.insumermodel.com/.well-known/jwks.json';
 const DEFAULT_ISSUER = 'https://api.insumermodel.com';
 
@@ -147,6 +154,7 @@ export async function verifyConditions(
     format: 'jwt',
   };
   body[walletField] = params.address;
+  if (params.walletProof) body.wallet_proof = params.walletProof;
 
   const domain =
     params.domain ??
@@ -200,6 +208,152 @@ export async function verifyConditions(
   const pass = attestation?.pass === true;
 
   return { pass, jwt, raw: data };
+}
+
+// ── proveWalletOwnership ─────────────────────────────────────────────────
+
+/** Minimal EIP-1193 provider surface — what `window.ethereum` exposes. */
+export interface Eip1193Provider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
+export interface ProveWalletOwnershipParams {
+  /** The EVM wallet address to prove control of. */
+  address: string;
+  /**
+   * An EIP-1193 provider (e.g. `window.ethereum`) used to request the
+   * signature. Ignored when `signMessage` is supplied.
+   */
+  provider?: Eip1193Provider;
+  /**
+   * Bring-your-own signer: given the challenge message, return the signature.
+   * Use this with wagmi (`signMessageAsync({ message })`), viem wallet
+   * clients, Privy, etc.
+   */
+  signMessage?: (message: string) => Promise<string>;
+  /** Domain to stamp into the challenge. Defaults to `window.location.hostname`. */
+  domain?: string;
+  /** Override the proof endpoint. Defaults to the production proxy. */
+  proofEndpoint?: string;
+}
+
+export interface ProveWalletOwnershipResult {
+  /** Pass to {@link verifyConditions} as `walletProof`. Null on failure. */
+  proofToken: string | null;
+  /** Seconds the token stays valid; one signature covers the whole visit. */
+  expiresInSec?: number;
+  /** Populated when the challenge, signature, or verification failed. */
+  error?: string;
+}
+
+/**
+ * Prove the person present controls the wallet, not just that they typed its
+ * address. Requests a one-time challenge from the SkyeMeta proof endpoint,
+ * has the wallet sign it (EIP-191 `personal_sign` — free, gasless, no
+ * transaction), and exchanges the signature for a short-lived proof token.
+ *
+ * The signature goes from the member's browser to the proof endpoint
+ * directly — it never passes through your server, and the verification stays
+ * an air gap: your server still only sees the address and the signed boolean.
+ * Smart-contract wallets (e.g. Coinbase Smart Wallet passkeys) are verified
+ * on-chain via EIP-1271/6492.
+ *
+ * The token is session-scoped: prove once when the wallet connects, then pass
+ * the token to every {@link verifyConditions} call for the rest of the visit.
+ *
+ * @example
+ * ```ts
+ * import { proveWalletOwnership, verifyConditions } from '@skyemeta/skyegate';
+ *
+ * const proof = await proveWalletOwnership({
+ *   address: walletAddress,
+ *   provider: window.ethereum,
+ * });
+ * if (!proof.proofToken) throw new Error(proof.error);
+ *
+ * const result = await verifyConditions({
+ *   address: walletAddress,
+ *   conditions,
+ *   licenseKey: process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!,
+ *   walletProof: proof.proofToken,
+ * });
+ * ```
+ */
+export async function proveWalletOwnership(
+  params: ProveWalletOwnershipParams
+): Promise<ProveWalletOwnershipResult> {
+  const endpoint = params.proofEndpoint ?? DEFAULT_PROOF_ENDPOINT;
+  const domain =
+    params.domain ??
+    (typeof window !== 'undefined' && window.location ? window.location.hostname : undefined);
+
+  if (!params.signMessage && !params.provider) {
+    return { proofToken: null, error: 'Pass a provider (window.ethereum) or a signMessage callback' };
+  }
+
+  let challenge: { challengeId?: string; message?: string; error?: string };
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'challenge', wallet: params.address, domain }),
+    });
+    challenge = await res.json();
+    if (!res.ok || !challenge.challengeId || !challenge.message) {
+      return { proofToken: null, error: challenge.error ?? `Challenge failed (HTTP ${res.status})` };
+    }
+  } catch (err) {
+    return {
+      proofToken: null,
+      error: err instanceof Error ? err.message : 'Network error reaching proof endpoint',
+    };
+  }
+
+  let signature: string;
+  try {
+    if (params.signMessage) {
+      signature = await params.signMessage(challenge.message);
+    } else {
+      // personal_sign takes the message hex-encoded; wallets render the UTF-8.
+      const hex =
+        '0x' +
+        Array.from(new TextEncoder().encode(challenge.message))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      signature = (await params.provider!.request({
+        method: 'personal_sign',
+        params: [hex, params.address],
+      })) as string;
+    }
+  } catch (err) {
+    return {
+      proofToken: null,
+      error: err instanceof Error ? err.message : 'Signature request was rejected',
+    };
+  }
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'prove',
+        challengeId: challenge.challengeId,
+        wallet: params.address,
+        signature,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.proofToken) {
+      return { proofToken: null, error: data.error ?? `Proof failed (HTTP ${res.status})` };
+    }
+    return { proofToken: data.proofToken, expiresInSec: data.expiresInSec };
+  } catch (err) {
+    return {
+      proofToken: null,
+      error: err instanceof Error ? err.message : 'Network error reaching proof endpoint',
+    };
+  }
 }
 
 // ── validateContentToken ─────────────────────────────────────────────────
