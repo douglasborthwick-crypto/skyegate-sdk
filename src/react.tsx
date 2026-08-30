@@ -5,7 +5,7 @@
  * React is a peer dependency — only import this entry point in a React app.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   verifyConditions,
   type Condition,
@@ -27,9 +27,12 @@ export interface UseSkyeGateOptions {
   endpoint?: string;
   /**
    * Wallet ownership proof token from `proveWalletOwnership` — proves the
-   * visitor controls the address, not just that they supplied it.
+   * visitor controls the address, not just that they supplied it. Required
+   * for licensed EVM calls (the proxy rejects them without it).
    */
   walletProof?: string;
+  /** Domain to claim for license-binding. Defaults to `window.location.hostname`. */
+  domain?: string;
   /** When false, the hook stays idle and never calls the proxy. Default true. */
   enabled?: boolean;
 }
@@ -46,8 +49,8 @@ export interface UseSkyeGateResult {
 /**
  * React hook that runs `verifyConditions` and tracks its lifecycle.
  *
- * Re-runs when `address`, `licenseKey`, `walletType`, `endpoint`, or the
- * serialized `conditions` change.
+ * Re-runs when `address`, `licenseKey`, `walletType`, `endpoint`, `domain`,
+ * `walletProof`, `enabled`, or the serialized `conditions` change.
  */
 export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
   const [status, setStatus] = useState<GateStatus>('idle');
@@ -77,6 +80,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
       licenseKey: options.licenseKey,
       walletType: options.walletType,
       endpoint: options.endpoint,
+      domain: options.domain,
       walletProof: options.walletProof,
     })
       .then((result) => {
@@ -107,6 +111,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
     options.licenseKey,
     options.walletType,
     options.endpoint,
+    options.domain,
     options.walletProof,
     conditionsKey,
     tick,
@@ -142,9 +147,19 @@ export interface GatedContentProps extends UseSkyeGateOptions {
  *
  * export default function Page() {
  *   const { address } = useAccount();
+ *   const { signMessageAsync } = useSignMessage();
+ *   const [proof, setProof] = useState<string>();
+ *   useEffect(() => {
+ *     setProof(undefined);
+ *     if (!address) return;
+ *     proveWalletOwnership({ address, signMessage: (m) => signMessageAsync({ message: m }) })
+ *       .then((r) => setProof(r.proofToken ?? undefined));
+ *   }, [address, signMessageAsync]);
  *   return (
  *     <GatedContent
  *       address={address}
+ *       walletProof={proof}
+ *       enabled={!!proof}
  *       conditions={[{ type: 'farcaster_id' }]}
  *       licenseKey={process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!}
  *       loading={<p>Verifying...</p>}
@@ -160,8 +175,13 @@ export function GatedContent(props: GatedContentProps) {
   const { children, fallback = null, loading = null, onPass, ...gateOptions } = props;
   const result = useSkyeGate(gateOptions);
 
+  // Fire once per JWT, as documented. Inline `onPass` arrows get a new
+  // identity every render; without the ref guard, a consumer that setStates
+  // inside onPass re-renders, re-fires the effect, and loops.
+  const firedForJwt = useRef<string | null>(null);
   useEffect(() => {
-    if (result.status === 'pass' && result.jwt && onPass) {
+    if (result.status === 'pass' && result.jwt && onPass && firedForJwt.current !== result.jwt) {
+      firedForJwt.current = result.jwt;
       onPass(result.jwt);
     }
   }, [result.status, result.jwt, onPass]);

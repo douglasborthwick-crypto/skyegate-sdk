@@ -23,15 +23,38 @@ Same key works on the [WordPress plugin](https://skyemeta.com/skyegate/) and thi
 
 ```tsx
 'use client';
-import { useAccount } from 'wagmi';
+import { useEffect, useState } from 'react';
+import { useAccount, useSignMessage } from 'wagmi';
+import { proveWalletOwnership } from '@skyemeta/skyegate';
 import { GatedContent } from '@skyemeta/skyegate/react';
 
 export default function Page() {
   const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+
+  // One free signature proves the visitor controls the address. The proxy
+  // requires it for licensed EVM calls; the token covers the whole visit.
+  const [proof, setProof] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    setProof(undefined);
+    if (!address) return;
+    proveWalletOwnership({
+      address,
+      signMessage: (message) => signMessageAsync({ message }),
+    }).then((r) => {
+      if (cancelled) return;
+      if (r.error) console.warn('wallet proof:', r.error);
+      setProof(r.proofToken ?? undefined);
+    });
+    return () => { cancelled = true; };
+  }, [address, signMessageAsync]);
 
   return (
     <GatedContent
       address={address}
+      walletProof={proof}
+      enabled={!!proof}
       conditions={[{ type: 'farcaster_id' }]}
       licenseKey={process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!}
       loading={<p>Verifying...</p>}
@@ -85,7 +108,7 @@ Low-level imperative call. The React hook + component use this internally.
 | `licenseKey` | `string` | Your `SKYE-XXXX-XXXX-XXXX` key |
 | `walletType` | `'evm'` \| `'solana'` | Default `'evm'` |
 | `endpoint` | `string` | Override the proxy URL (advanced) |
-| `walletProof` | `string` | Proof token from `proveWalletOwnership` — see **Wallet ownership** below |
+| `walletProof` | `string` | Proof token from `proveWalletOwnership`. **Required for licensed EVM calls** — the proxy rejects them with 403 `wallet_proof_required` without it. See **Wallet ownership** below |
 
 Returns `{ pass, jwt, raw, error? }`. On `pass:true`, hand `jwt` to your server endpoint and call `validateContentToken` there.
 
@@ -140,9 +163,15 @@ Same vocabulary as the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skye
 
 ```
 your Next.js app
-  ↓ verifyConditions(address, conditions, licenseKey)
+  ↓ proveWalletOwnership(address, provider | signMessage)
+  ↓
+skyemeta.com/api/wallet-proof  ← one-time challenge; the wallet signs it
+  ↓                              (EIP-191, free) and a session-scoped
+  ↓                              proof token comes back
+  ↓ verifyConditions(address, conditions, licenseKey, walletProof)
   ↓
 skyemeta.com/api/verify   ← SkyeMeta proxy validates SKYE key + domain
+  ↓                         + the ownership proof for the address
   ↓
 api.insumermodel.com      ← InsumerAPI returns a signed boolean; no balances leak
   ↓
@@ -158,9 +187,9 @@ Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently 
 
 ## Security notes
 
-- **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. The proxy auto-binds your key to your production domain on first use; subsequent calls from any other apex are rejected. To move a key to a different domain, contact support.
+- **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. The proxy auto-binds your key to your production domain on first use; subsequent calls from any other apex are rejected. To move a key to a different domain, use the self-serve **Move License to New Domain** flow at [skyemeta.com/account](https://skyemeta.com/account/).
 - **Cross-condition replay protection.** Pass `expectedConditions` to `validateContentToken` to ensure a JWT earned for one route can't unlock another. This scopes a token to a condition; it does not bind it to whoever presents it. See **Wallet ownership** below.
-- **Wallet ownership.** The address passed to `verifyConditions` is supplied by the caller. The JWT attests that *this address* meets the conditions, signed by InsumerAPI and verified against its JWKS. It does **not** attest that whoever presents the JWT controls that address, and `validateContentToken` does not bind the token to its presenter. Addresses meeting a given condition are public chain state. If your gate needs proof of control, call `proveWalletOwnership` after the wallet connects and pass the resulting token as `walletProof` to `verifyConditions` — the proxy then verifies an EIP-191 signature (EIP-1271/6492 for smart wallets) over a one-time, domain-bound challenge before attesting. Note the JWT itself remains a bearer token: `validateContentToken` still does not bind it to its presenter, so keep JWT handling server-side and treat short expiry as load-bearing.
+- **Wallet ownership.** The address passed to `verifyConditions` is supplied by the caller. The JWT attests that *this address* meets the conditions, signed by InsumerAPI and verified against its JWKS. It does **not** attest that whoever presents the JWT controls that address, and `validateContentToken` does not bind the token to its presenter. Addresses meeting a given condition are public chain state. The proxy **requires** proof of control for licensed EVM calls: call `proveWalletOwnership` after the wallet connects and pass the resulting token as `walletProof` to `verifyConditions` — the proxy verifies an EIP-191 signature (EIP-1271/6492 for smart wallets) over a one-time, domain-bound challenge before attesting, and rejects licensed EVM calls without it (403 `wallet_proof_required`). Solana calls are not enforced. Note the JWT itself remains a bearer token: `validateContentToken` still does not bind it to its presenter, so keep JWT handling server-side and treat short expiry as load-bearing.
 - **JWT freshness.** JWTs are short-lived; `validateContentToken` enforces the `exp` claim via `jose`. Each verification produces a fresh JWT.
 - **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind — handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
 

@@ -127,6 +127,9 @@ const DEFAULT_ISSUER = 'https://api.insumermodel.com';
  * ```ts
  * import { verifyConditions } from '@skyemeta/skyegate';
  *
+ * // Licensed EVM calls require a wallet-ownership proof (403 without it):
+ * const proof = await proveWalletOwnership({ address: walletAddress, provider: window.ethereum });
+ *
  * const result = await verifyConditions({
  *   address: walletAddress,
  *   conditions: [{
@@ -136,6 +139,7 @@ const DEFAULT_ISSUER = 'https://api.insumermodel.com';
  *     threshold: 0.01,
  *   }],
  *   licenseKey: process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!,
+ *   walletProof: proof.proofToken!,
  * });
  *
  * if (result.pass && result.jwt) {
