@@ -1,6 +1,6 @@
 {
   "name": "@skyemeta/skyegate",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "SkyeGate Pro for Vercel — condition-based content gating for Next.js apps. Powered by InsumerAPI. Companion to the SkyeGate WordPress plugin: same SKYE license key, one license, two stacks.",
   "type": "module",
   "main": "build/index.js",
@@ -55,16 +55,21 @@
     "jose": "^5.9.0"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "@noble/post-quantum": "^0.7.1"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "@noble/post-quantum": {
       "optional": true
     }
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^18.0.0"
+    "@types/react": "^18.0.0",
+    "@noble/post-quantum": "^0.7.1"
   }
 }

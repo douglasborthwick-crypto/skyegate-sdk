@@ -23,6 +23,8 @@
  */
 
 import { jwtVerify, createRemoteJWKSet, type JWTPayload } from 'jose';
+import { verifyPqCompanion, pqFails, type PqResult, type PqStatus } from './pq.js';
+export type { PqResult, PqStatus };
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -80,6 +82,11 @@ export interface VerifyConditionsResult {
   pass: boolean;
   /** Signed JWT proving the result. Pass to {@link validateContentToken} on the server. */
   jwt: string | null;
+  /**
+   * Post-quantum companion of `jwt` (compact JWS, alg ML-DSA-65), when the API returned one.
+   * Pass it alongside `jwt` to {@link validateContentToken} as `options.pqJwt`.
+   */
+  pqJwt: string | null;
   /** Full InsumerAPI response envelope, for advanced inspection. */
   raw: unknown;
   /** Populated when the proxy or upstream returned a non-2xx or `pass:false`. */
@@ -97,6 +104,14 @@ export interface ValidateContentTokenOptions {
    * find a matching `evaluatedCondition` in the JWT's `results` array.
    */
   expectedConditions?: Condition[];
+  /** The `pqJwt` sibling returned with the JWT, if you have it. Reported as `pq` in the result. */
+  pqJwt?: string;
+  /**
+   * Your own post-quantum cutoff. A companion that is present and fails always rejects. An absent or
+   * unverifiable companion rejects only once this date has passed (judged by this server's clock).
+   * Undefined = reported only. Install `@noble/post-quantum` to verify companions.
+   */
+  pqRequiredFrom?: string | Date;
 }
 
 export interface ValidateContentTokenResult {
@@ -108,6 +123,8 @@ export interface ValidateContentTokenResult {
   payload?: JWTPayload & { pass?: boolean; results?: unknown[] };
   /** Reason for failure when `valid` or `pass` is false. */
   error?: string;
+  /** Post-quantum companion verdict: verified | refuted | absent | unverifiable. Always reported. */
+  pq?: PqResult;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -241,6 +258,7 @@ export async function verifyConditions(
     return {
       pass: false,
       jwt: null,
+      pqJwt: null,
       raw: null,
       error: err instanceof Error ? err.message : 'Network error reaching SkyeMeta proxy',
     };
@@ -253,6 +271,7 @@ export async function verifyConditions(
     return {
       pass: false,
       jwt: null,
+      pqJwt: null,
       raw: null,
       error: `Invalid JSON from proxy (HTTP ${response.status})`,
     };
@@ -262,6 +281,7 @@ export async function verifyConditions(
     return {
       pass: false,
       jwt: null,
+      pqJwt: null,
       raw: data,
       error: data?.error ?? `HTTP ${response.status}`,
     };
@@ -269,9 +289,10 @@ export async function verifyConditions(
 
   const attestation = data?.data?.attestation;
   const jwt = data?.data?.jwt ?? null;
+  const pqJwt = typeof data?.data?.pqJwt === 'string' ? data.data.pqJwt : null;
   const pass = attestation?.pass === true;
 
-  return { pass, jwt, raw: data };
+  return { pass, jwt, pqJwt, raw: data };
 }
 
 // ── proveWalletOwnership ─────────────────────────────────────────────────
@@ -519,5 +540,18 @@ export async function validateContentToken(
     }
   }
 
-  return { valid: true, pass: true, payload };
+  // Post-quantum companion: always reported. Refuted always fails; absent/unverifiable fail only
+  // past the caller's own pqRequiredFrom cutoff.
+  const pq = await verifyPqCompanion(options.pqJwt, payload as Record<string, unknown>, jwksUrl);
+  if (pqFails(pq, options.pqRequiredFrom)) {
+    return {
+      valid: true,
+      pass: false,
+      payload,
+      pq,
+      error: `Post-quantum companion ${pq.status}${pq.reason ? ` (${pq.reason})` : ''}`,
+    };
+  }
+
+  return { valid: true, pass: true, payload, pq };
 }
