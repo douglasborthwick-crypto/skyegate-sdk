@@ -38,7 +38,7 @@ if (!proof.proofToken) {
 const result = await verifyConditions({
   address: account.address,
   conditions: [
-    { type: 'token_balance', contractAddress: 'native', chainId: 1, threshold: 0.000001 },
+    { type: 'token_balance', contractAddress: 'native', chainId: 1, threshold: '0.000001' },
   ],
   licenseKey,
   domain,

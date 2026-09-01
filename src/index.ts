@@ -34,8 +34,12 @@ export interface Condition {
   contractAddress?: string;
   /** Numeric chain ID for EVM chains; `"solana"` for Solana; `"xrpl"` for XRP Ledger. */
   chainId?: number | string;
-  /** Minimum balance for `token_balance`. Decimals applied per-token. */
-  threshold?: number;
+  /**
+   * Minimum balance for `token_balance`. Prefer a decimal string (`'100'`) —
+   * it keeps full precision and is the form v2 signing keys require; a number
+   * is accepted and converted to its decimal-string form before sending.
+   */
+  threshold?: number | string;
   /** Decimals for `token_balance`. Token-specific — check the token's documentation. */
   decimals?: number;
   /** EAS template name, e.g. `"coinbase_verified_account"`, `"gitcoin_passport_active"`. */
@@ -108,6 +112,62 @@ export interface ValidateContentTokenResult {
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
+// ── Decimal-string thresholds ─────────────────────────────────────────────
+// v2 InsumerAPI signing keys require token_balance thresholds as decimal
+// strings (a JSON number has already lost precision by parse time). Numbers
+// are still accepted here and converted before sending; the exponent-free
+// form matches the upstream grammar ^\d+(\.\d+)?$.
+
+function numberToDecimalString(n: number): string | null {
+  const s = String(n);
+  const m = s.match(/^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);
+  if (!m) return null; // negative, NaN, Infinity — not representable upstream
+  const [, int, frac = '', expStr] = m;
+  if (expStr === undefined) return s;
+  const digits = int + frac;
+  const exp = parseInt(expStr, 10) - frac.length;
+  if (exp >= 0) return digits + '0'.repeat(exp);
+  const point = digits.length + exp;
+  return point <= 0
+    ? '0.' + '0'.repeat(-point) + digits
+    : digits.slice(0, point) + '.' + digits.slice(point);
+}
+
+// Canonical form for era-tolerant equality: a v1-signed JWT echoes thresholds
+// as numbers, a v2-signed JWT as canonical decimal strings ("00.50" → "0.5").
+function canonicalThreshold(v: unknown): string | null {
+  let s: string | null;
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    s = numberToDecimalString(v);
+    if (s === null) return null;
+  } else if (typeof v === 'string') {
+    s = v.trim();
+    if (/[eE]/.test(s)) {
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      s = numberToDecimalString(n);
+      if (s === null) return null;
+    }
+    if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  } else {
+    return null;
+  }
+  const [int, frac = ''] = s.split('.');
+  const i = int.replace(/^0+(?=\d)/, '');
+  const f = frac.replace(/0+$/, '');
+  return f ? i + '.' + f : i;
+}
+
+function withStringThresholds(conditions: Condition[]): Condition[] {
+  return conditions.map((c) => {
+    if (typeof c.threshold === 'number' && Number.isFinite(c.threshold)) {
+      const s = numberToDecimalString(c.threshold);
+      if (s !== null) return { ...c, threshold: s };
+    }
+    return c;
+  });
+}
+
 const DEFAULT_VERIFY_ENDPOINT = 'https://skyemeta.com/api/verify';
 const DEFAULT_PROOF_ENDPOINT = 'https://skyemeta.com/api/wallet-proof';
 const DEFAULT_JWKS_URL = 'https://api.insumermodel.com/.well-known/jwks.json';
@@ -136,7 +196,7 @@ const DEFAULT_ISSUER = 'https://api.insumermodel.com';
  *     type: 'token_balance',
  *     contractAddress: 'native',
  *     chainId: 1,
- *     threshold: 0.01,
+ *     threshold: '0.01',
  *   }],
  *   licenseKey: process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!,
  *   walletProof: proof.proofToken!,
@@ -154,7 +214,7 @@ export async function verifyConditions(
   const walletField = params.walletType === 'solana' ? 'solanaWallet' : 'wallet';
 
   const body: Record<string, unknown> = {
-    conditions: params.conditions,
+    conditions: withStringThresholds(params.conditions),
     format: 'jwt',
   };
   body[walletField] = params.address;
@@ -375,7 +435,14 @@ function getJwks(url: string) {
 
 function compareCondition(signed: Record<string, unknown>, expected: Condition): boolean {
   for (const key of Object.keys(expected) as (keyof Condition)[]) {
-    if (signed[key] !== expected[key]) return false;
+    if (key === 'threshold') {
+      // Era-tolerant: a v1-signed JWT echoes token_balance thresholds as
+      // numbers, a v2-signed JWT as canonical decimal strings.
+      const a = canonicalThreshold(signed[key]);
+      if (a === null || a !== canonicalThreshold(expected[key])) return false;
+    } else if (signed[key] !== expected[key]) {
+      return false;
+    }
   }
   return true;
 }
