@@ -59,11 +59,11 @@ export default function Page() {
       licenseKey={process.env.NEXT_PUBLIC_SKYE_LICENSE_KEY!}
       loading={<p>Verifying...</p>}
       fallback={<p>Connect a Farcaster-linked wallet to view this.</p>}
-      onPass={async (jwt) => {
+      onPass={async (jwt, pqJwt) => {
         const res = await fetch('/api/gated-content', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jwt }),
+          body: JSON.stringify({ jwt, pqJwt }),
         });
         const { secret } = await res.json();
         // render `secret` somewhere
@@ -82,9 +82,10 @@ export default function Page() {
 import { validateContentToken } from '@skyemeta/skyegate';
 
 export async function POST(req: Request) {
-  const { jwt } = await req.json();
+  const { jwt, pqJwt } = await req.json();
   const result = await validateContentToken(jwt, {
     expectedConditions: [{ type: 'farcaster_id' }],
+    pqJwt, // post-quantum companion; reported as result.pq, refuted always fails
   });
   if (!result.pass) {
     return Response.json({ error: result.error }, { status: 403 });

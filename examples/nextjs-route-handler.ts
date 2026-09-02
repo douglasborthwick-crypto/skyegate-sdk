@@ -10,7 +10,7 @@
 import { validateContentToken } from '@skyemeta/skyegate';
 
 export async function POST(req: Request) {
-  let body: { jwt?: string };
+  let body: { jwt?: string; pqJwt?: string };
   try {
     body = await req.json();
   } catch {
@@ -26,7 +26,8 @@ export async function POST(req: Request) {
     // *this* condition, not for another route. It does not bind the JWT to
     // whoever presents it. See "Wallet ownership" in the README.
     expectedConditions: [{ type: 'farcaster_id' }],
-  });
+      pqJwt: body.pqJwt, // post-quantum companion; reported as result.pq
+});
 
   if (!result.pass) {
     return Response.json({ error: result.error ?? 'Not authorized' }, { status: 403 });

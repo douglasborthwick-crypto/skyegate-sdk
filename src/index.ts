@@ -505,7 +505,7 @@ export async function validateContentToken(
 
   let payload: JWTPayload & { pass?: boolean; results?: unknown[] };
   try {
-    const verified = await jwtVerify(jwt, getJwks(jwksUrl), { issuer });
+    const verified = await jwtVerify(jwt, getJwks(jwksUrl), { issuer, algorithms: ['ES256'] });
     payload = verified.payload as typeof payload;
   } catch (err) {
     return {

@@ -131,5 +131,8 @@ export function pqFails(result: PqResult, pqRequiredFrom?: string | Date): boole
   if (result.status === 'verified') return false;
   if (!pqRequiredFrom) return false;
   const from = new Date(pqRequiredFrom).getTime();
-  return !isNaN(from) && Date.now() >= from;
+  if (isNaN(from)) {
+    throw new Error(`pqRequiredFrom is not a valid date: ${String(pqRequiredFrom)}`);
+  }
+  return Date.now() >= from;
 }
