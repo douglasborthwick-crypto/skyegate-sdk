@@ -110,7 +110,7 @@ Low-level imperative call. The React hook + component use this internally.
 | `endpoint` | `string` | Override the proxy URL (advanced) |
 | `walletProof` | `string` | Proof token from `proveWalletOwnership`. **Required for licensed EVM calls** — the proxy rejects them with 403 `wallet_proof_required` without it. See **Wallet ownership** below |
 
-Returns `{ pass, jwt, raw, error? }`. On `pass:true`, hand `jwt` to your server endpoint and call `validateContentToken` there.
+Returns `{ pass, jwt, pqJwt, raw, error? }`. On `pass:true`, hand `jwt` and `pqJwt` (the post-quantum companion, when present) to your server endpoint and call `validateContentToken` there with `pqJwt` in the options.
 
 ### `proveWalletOwnership(params)` → `Promise<ProveWalletOwnershipResult>`
 
@@ -135,16 +135,18 @@ Server-side JWT validation. Verifies the ECDSA P-256 signature against InsumerAP
 | `jwksUrl` | `string` | Default: InsumerAPI's public JWKS |
 | `issuer` | `string` | Default: `https://api.insumermodel.com` |
 | `expectedConditions` | `Condition[]` | Replay protection — JWT must contain a matching `evaluatedCondition` for each |
+| `pqJwt` | `string` | The post-quantum companion returned beside `jwt`. Checked and reported as `pq` |
+| `pqRequiredFrom` | `string \| Date` | Your own cutoff. A companion that is present and fails always rejects; an absent or unverifiable one rejects only once this date has passed, judged by your server's clock |
 
-Returns `{ valid, pass, payload?, error? }`. Only treat the request as authorized when `pass === true`.
+Returns `{ valid, pass, payload?, pq?, error? }`. Only treat the request as authorized when `pass === true`. `pq.status` is one of `verified`, `refuted`, `absent`, `unverifiable` and is reported on every outcome once the JWT itself verified. Install the optional peer `@noble/post-quantum` to verify companions; without it a present companion is reported `unverifiable`.
 
 ### `useSkyeGate(options)` → `UseSkyeGateResult`
 
-React hook. Same options as `verifyConditions` (including `walletProof`), plus `enabled?: boolean` to gate the call. Returns `{ status, pass, jwt, error, refetch }` where `status` cycles through `'idle' → 'verifying' → 'pass' | 'fail' | 'error'`.
+React hook. Same options as `verifyConditions` (including `walletProof`), plus `enabled?: boolean` to gate the call. Returns `{ status, pass, jwt, pqJwt, error, refetch }` where `status` cycles through `'idle' → 'verifying' → 'pass' | 'fail' | 'error'`.
 
 ### `<GatedContent />`
 
-Declarative wrapper. Same options as the hook. Renders `children` only when the gate passes; renders `fallback` otherwise; renders `loading` while verifying. Optional `onPass(jwt)` callback fires once when the gate first passes.
+Declarative wrapper. Same options as the hook. Renders `children` only when the gate passes; renders `fallback` otherwise; renders `loading` while verifying. Optional `onPass(jwt, pqJwt?)` callback fires once when the gate first passes; forward both tokens to your server.
 
 ## Condition types
 
@@ -178,7 +180,8 @@ api.insumermodel.com      ← InsumerAPI returns a signed boolean; no balances l
 JWT signed with ECDSA P-256
   ↓ POSTed to your server
   ↓
-validateContentToken(jwt) ← jose + JWKS, signature + issuer + expiry + condition match
+validateContentToken(jwt, { pqJwt }) ← jose + JWKS, signature + issuer + expiry + condition match
+                                        + post-quantum companion (ML-DSA-65) reported as pq
   ↓
 gated content delivered
 ```

@@ -515,8 +515,12 @@ export async function validateContentToken(
     };
   }
 
+  // Post-quantum companion: always reported, on every outcome below. Refuted always fails;
+  // absent/unverifiable fail only past the caller's own pqRequiredFrom cutoff.
+  const pq = await verifyPqCompanion(options.pqJwt, payload as Record<string, unknown>, jwksUrl);
+
   if (payload.pass !== true) {
-    return { valid: true, pass: false, payload, error: 'Verification did not pass' };
+    return { valid: true, pass: false, payload, pq, error: 'Verification did not pass' };
   }
 
   if (options.expectedConditions && options.expectedConditions.length > 0) {
@@ -535,14 +539,12 @@ export async function validateContentToken(
         valid: true,
         pass: false,
         payload,
+        pq,
         error: 'Signed conditions do not match expected conditions',
       };
     }
   }
 
-  // Post-quantum companion: always reported. Refuted always fails; absent/unverifiable fail only
-  // past the caller's own pqRequiredFrom cutoff.
-  const pq = await verifyPqCompanion(options.pqJwt, payload as Record<string, unknown>, jwksUrl);
   if (pqFails(pq, options.pqRequiredFrom)) {
     return {
       valid: true,

@@ -41,6 +41,8 @@ export interface UseSkyeGateResult {
   status: GateStatus;
   pass: boolean;
   jwt: string | null;
+  /** Post-quantum companion of `jwt` (compact JWS, ML-DSA-65), when the API returned one. Hand it to `validateContentToken` as `options.pqJwt`. */
+  pqJwt: string | null;
   error: string | null;
   /** Trigger a re-verification with the same parameters. */
   refetch: () => void;
@@ -55,6 +57,7 @@ export interface UseSkyeGateResult {
 export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
   const [status, setStatus] = useState<GateStatus>('idle');
   const [jwt, setJwt] = useState<string | null>(null);
+  const [pqJwt, setPqJwt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -65,6 +68,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
     if (!enabled || !options.address) {
       setStatus('idle');
       setJwt(null);
+      setPqJwt(null);
       setError(null);
       return;
     }
@@ -72,6 +76,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
     let cancelled = false;
     setStatus('verifying');
     setJwt(null);
+    setPqJwt(null);
     setError(null);
 
     verifyConditions({
@@ -86,6 +91,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
       .then((result) => {
         if (cancelled) return;
         setJwt(result.jwt);
+        setPqJwt(result.pqJwt ?? null);
         if (result.pass) {
           setStatus('pass');
         } else if (result.error) {
@@ -121,6 +127,7 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
     status,
     pass: status === 'pass',
     jwt,
+    pqJwt,
     error,
     refetch: () => setTick((t) => t + 1),
   };
@@ -133,8 +140,11 @@ export interface GatedContentProps extends UseSkyeGateOptions {
   fallback?: ReactNode;
   /** Rendered while verifying. */
   loading?: ReactNode;
-  /** Called once when the gate first passes. JWT can be POSTed to your server to fetch gated content. */
-  onPass?: (jwt: string) => void;
+  /**
+   * Called once when the gate first passes. POST `jwt` (and `pqJwt`, the post-quantum companion,
+   * when present) to your server and check them with `validateContentToken`.
+   */
+  onPass?: (jwt: string, pqJwt?: string) => void;
 }
 
 /**
@@ -182,9 +192,9 @@ export function GatedContent(props: GatedContentProps) {
   useEffect(() => {
     if (result.status === 'pass' && result.jwt && onPass && firedForJwt.current !== result.jwt) {
       firedForJwt.current = result.jwt;
-      onPass(result.jwt);
+      onPass(result.jwt, result.pqJwt ?? undefined);
     }
-  }, [result.status, result.jwt, onPass]);
+  }, [result.status, result.jwt, result.pqJwt, onPass]);
 
   if (result.status === 'verifying') return <>{loading}</>;
   if (result.status === 'pass') return <>{children}</>;
