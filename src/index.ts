@@ -476,6 +476,13 @@ function compareCondition(signed: Record<string, unknown>, expected: Condition):
  * what your route requires — preventing a JWT earned for one condition set
  * from being replayed against a different one.
  *
+ * Caching: nothing here caches a verdict, so every call re-verifies the signature.
+ * If you add a cache, key it on something only the person who passed could produce
+ * (the JWT itself, or a session you issued them) — never on the wallet address or a
+ * content id. Both are public, and a cache hit returns before this function runs, so
+ * a cached "yes" filed under a public value hands out access without any signature
+ * ever being checked.
+ *
  * @example Next.js route handler
  * ```ts
  * import { validateContentToken } from '@skyemeta/skyegate';

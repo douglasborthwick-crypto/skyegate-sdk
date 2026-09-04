@@ -96,6 +96,21 @@ export async function POST(req: Request) {
 
 The browser only ever receives the gated content after the JWT clears server-side validation. The text isn't in the page source or the bundle — it's fetched only after a signed verification.
 
+### If you cache the result, key it on the JWT
+
+Nothing in this SDK caches a verdict. Every call to `validateContentToken` re-verifies the
+signature, so a route that follows the example above is checking cryptographic proof on every
+request. Caching that away is a reasonable optimisation, and it is where this goes wrong.
+
+Key any cache on something only the person who passed could produce: the JWT itself, or a
+session you issued them. **Never key it on the wallet address, and never on a content or
+product id.** Both are public. A cached "yes" filed under a public value can be claimed by
+anyone who knows it, and because a cache hit returns before your validation runs, the
+signature you were relying on is never checked at all.
+
+A wallet address feels like an identifier for a person. It isn't a secret. It's a name anyone
+can read off a block explorer, and anyone can send you one.
+
 ## API
 
 ### `verifyConditions(params)` → `Promise<VerifyConditionsResult>`
