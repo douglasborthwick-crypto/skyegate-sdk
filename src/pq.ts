@@ -117,12 +117,49 @@ export async function verifyPqCompanion(
     return { status: 'refuted', kid, reason: `ML-DSA verification error: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (!ok) return { status: 'refuted', kid, reason: 'pqJwt signature does not verify' };
-  for (const claim of ['jti', 'exp', 'pass', 'sub']) {
-    if (JSON.stringify(payload[claim]) !== JSON.stringify(classicalPayload[claim])) {
-      return { status: 'refuted', kid, reason: `pqJwt claim "${claim}" differs from the ES256 JWT` };
-    }
+  // The companion binds the FULL claim set: same member names, deeply equal values, compared as
+  // parsed JSON and never by bytes. Everything the caller reads from the ES256 JWT (`sub`,
+  // `results`, `conditionHash`, the block anchor) is therefore vouched for by the companion too.
+  const claim = firstClaimDifference(payload, classicalPayload);
+  if (claim !== null) {
+    return { status: 'refuted', kid, reason: `pqJwt claim "${claim}" differs from the ES256 JWT` };
   }
   return { status: 'verified', kid };
+}
+
+const MAX_CLAIM_DEPTH = 128;
+
+/**
+ * First path at which two parsed JSON values differ, or null when deeply equal. Objects are
+ * compared without regard to member order, arrays in order, primitives by value; a member on one
+ * side only is a difference. Nesting past MAX_CLAIM_DEPTH is reported as a difference, never
+ * walked, so this cannot throw or overflow the stack.
+ */
+function firstClaimDifference(a: unknown, b: unknown, path = '', depth = 0): string | null {
+  if (depth > MAX_CLAIM_DEPTH) return path || '(nesting too deep to compare)';
+  if (a === b) return null;
+  const aObj = a !== null && typeof a === 'object';
+  const bObj = b !== null && typeof b === 'object';
+  if (!aObj || !bObj || Array.isArray(a) !== Array.isArray(b)) return path;
+  if (Array.isArray(a)) {
+    const bArr = b as unknown[];
+    if (a.length !== bArr.length) return path;
+    for (let i = 0; i < a.length; i++) {
+      const d = firstClaimDifference(a[i], bArr[i], `${path}[${i}]`, depth + 1);
+      if (d !== null) return d;
+    }
+    return null;
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+  for (const k of Object.keys(ao)) if (!has(bo, k)) return path ? `${path}.${k}` : k;
+  for (const k of Object.keys(bo)) if (!has(ao, k)) return path ? `${path}.${k}` : k;
+  for (const k of Object.keys(ao)) {
+    const d = firstClaimDifference(ao[k], bo[k], path ? `${path}.${k}` : k, depth + 1);
+    if (d !== null) return d;
+  }
+  return null;
 }
 
 /** Policy: does this companion status fail the check, given the caller's cutoff? */

@@ -154,7 +154,7 @@ Server-side JWT validation. Verifies the ECDSA P-256 signature against InsumerAP
 | `pqJwt` | `string` | The post-quantum companion returned beside `jwt`. Checked and reported as `pq` |
 | `pqRequiredFrom` | `string \| Date` | Your own cutoff. A companion that is present and fails always rejects; an absent or unverifiable one rejects only once this date has passed, judged by your server's clock |
 
-Returns `{ valid, pass, payload?, pq?, error? }`. Only treat the request as authorized when `pass === true`. `pq.status` is one of `verified`, `refuted`, `absent`, `unverifiable` and is reported on every outcome once the JWT itself verified. Install the optional peer `@noble/post-quantum` to verify companions; without it a present companion is reported `unverifiable`.
+Returns `{ valid, pass, payload?, pq?, error? }`. Only treat the request as authorized when `pass === true`. `pq.status` is one of `verified`, `refuted`, `absent`, `unverifiable` and is reported on every outcome once the JWT itself verified. Install the optional peer `@noble/post-quantum` to verify companions; without it a present companion is reported `unverifiable`. The companion is bound to the JWT by the full claim set: every claim in the two tokens must match, compared as parsed JSON, so `verified` vouches for the `results` that `expectedConditions` is matched against, not only for `pass`.
 
 ### `useSkyeGate(options)` → `UseSkyeGateResult`
 
