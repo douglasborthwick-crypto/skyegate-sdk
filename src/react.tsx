@@ -21,7 +21,7 @@ export interface UseSkyeGateOptions {
   conditions: Condition[];
   /** Your SKYE license key. Safe to expose as `NEXT_PUBLIC_SKYE_LICENSE_KEY` since the proxy enforces domain locking. */
   licenseKey: string;
-  /** `"evm"` (default) or `"solana"`. */
+  /** Wallet kind: `"evm"` (default), `"solana"`, `"xrpl"`, `"bitcoin"`, `"tron"`, `"stellar"` or `"sui"`. */
   walletType?: VerifyConditionsParams['walletType'];
   /** Override the verification endpoint. */
   endpoint?: string;
@@ -94,9 +94,10 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
         setPqJwt(result.pqJwt ?? null);
         if (result.pass) {
           setStatus('pass');
-        } else if (result.error) {
+        } else if (result.error !== undefined) {
+          // Any error, even one with no text, is "no verdict", never a "not met".
           setStatus('error');
-          setError(result.error);
+          setError(result.error || 'Verification failed');
         } else {
           setStatus('fail');
         }
@@ -136,8 +137,14 @@ export function useSkyeGate(options: UseSkyeGateOptions): UseSkyeGateResult {
 export interface GatedContentProps extends UseSkyeGateOptions {
   /** Rendered when the gate passes. */
   children: ReactNode;
-  /** Rendered when the gate fails or errors. */
+  /** Rendered when the wallet does not meet the conditions (and, unless `errorFallback` is set, on an error). */
   fallback?: ReactNode;
+  /**
+   * Rendered when no verdict came back: the proxy or the API refused the request or could not be
+   * reached, or the license was rejected. Pass a function to receive the error text. Defaults to
+   * `fallback`, so an error and a "not met" look the same unless you set this.
+   */
+  errorFallback?: ReactNode | ((error: string) => ReactNode);
   /** Rendered while verifying. */
   loading?: ReactNode;
   /**
@@ -182,7 +189,7 @@ export interface GatedContentProps extends UseSkyeGateOptions {
  * ```
  */
 export function GatedContent(props: GatedContentProps) {
-  const { children, fallback = null, loading = null, onPass, ...gateOptions } = props;
+  const { children, fallback = null, errorFallback, loading = null, onPass, ...gateOptions } = props;
   const result = useSkyeGate(gateOptions);
 
   // Fire once per JWT, as documented. Inline `onPass` arrows get a new
@@ -198,6 +205,9 @@ export function GatedContent(props: GatedContentProps) {
 
   if (result.status === 'verifying') return <>{loading}</>;
   if (result.status === 'pass') return <>{children}</>;
+  if (result.status === 'error' && errorFallback !== undefined) {
+    return <>{typeof errorFallback === 'function' ? errorFallback(result.error ?? 'Verification failed') : errorFallback}</>;
+  }
   return <>{fallback}</>;
 }
 

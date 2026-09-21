@@ -2,7 +2,7 @@
 
 **SkyeGate Pro for Vercel.** Condition-based content gating for Next.js apps — wallet-verified access to pages, posts, files, or API routes. Gate on token balance, NFT ownership, EAS attestation, or Farcaster identity. Companion to the [SkyeGate WordPress plugin](https://skyemeta.com/skyegate/) — same SKYE license key, same conditions, same proxy. **One license, two stacks.**
 
-> **Powered by [InsumerAPI](https://insumermodel.com/developers/), the wallet verification engine.** SkyeGate is a [SkyeMeta](https://skyemeta.com) product; InsumerAPI is an independent product of [InsumerModel](https://insumermodel.com). Two companies, one verification primitive.
+> **Powered by [InsumerAPI](https://insumermodel.com/developers/), the condition-based access API.** SkyeGate is a [SkyeMeta](https://skyemeta.com) product; InsumerAPI is an independent product of [InsumerModel](https://insumermodel.com). Two companies: send a condition in, get a signed answer out.
 
 ```bash
 npm install @skyemeta/skyegate
@@ -119,14 +119,14 @@ Low-level imperative call. The React hook + component use this internally.
 
 | Field | Type | Notes |
 |---|---|---|
-| `address` | `string` | Wallet address (EVM hex or Solana base58) |
+| `address` | `string` | Wallet address, in the format of its `walletType` |
 | `conditions` | `Condition[]` | One or more conditions; `pass=true` requires *all* to be met |
 | `licenseKey` | `string` | Your `SKYE-XXXX-XXXX-XXXX` key |
-| `walletType` | `'evm'` \| `'solana'` | Default `'evm'` |
+| `walletType` | `'evm'` \| `'solana'` \| `'xrpl'` \| `'bitcoin'` \| `'tron'` \| `'stellar'` \| `'sui'` | Default `'evm'`. Picks which request field carries the address |
 | `endpoint` | `string` | Override the proxy URL (advanced) |
 | `walletProof` | `string` | Proof token from `proveWalletOwnership`. **Required for licensed EVM calls** — the proxy rejects them with 403 `wallet_proof_required` without it. See **Wallet ownership** below |
 
-Returns `{ pass, jwt, pqJwt, raw, error? }`. On `pass:true`, hand `jwt` and `pqJwt` (the post-quantum companion, when present) to your server endpoint and call `validateContentToken` there with `pqJwt` in the options.
+Returns `{ pass, jwt, pqJwt, raw, error? }`. `error` is always a string, and is set only when no verdict came back (a refused request, a license problem, an outage); a signed "not met" is `pass: false` with no `error`. On `pass:true`, hand `jwt` and `pqJwt` (the post-quantum companion, when present) to your server endpoint and call `validateContentToken` there with `pqJwt` in the options.
 
 ### `proveWalletOwnership(params)` → `Promise<ProveWalletOwnershipResult>`
 
@@ -150,7 +150,7 @@ Server-side JWT validation. Verifies the ECDSA P-256 signature against InsumerAP
 |---|---|---|
 | `jwksUrl` | `string` | Default: InsumerAPI's public JWKS |
 | `issuer` | `string` | Default: `https://api.insumermodel.com` |
-| `expectedConditions` | `Condition[]` | Replay protection — JWT must contain a matching `evaluatedCondition` for each |
+| `expectedConditions` | `Condition[]` | Replay protection: pass the same conditions you gave `verifyConditions`, and each must match a signed result. `template` is checked through what it resolves to (an unknown template never matches), `label` against the signed label, `chainId` as a number or numeric string, addresses case-insensitively; `decimals` is ignored because it is never signed |
 | `pqJwt` | `string` | The post-quantum companion returned beside `jwt`. Checked and reported as `pq` |
 | `pqRequiredFrom` | `string \| Date` | Your own cutoff. A companion that is present and fails always rejects; an absent or unverifiable one rejects only once this date has passed, judged by your server's clock |
 
@@ -162,7 +162,7 @@ React hook. Same options as `verifyConditions` (including `walletProof`), plus `
 
 ### `<GatedContent />`
 
-Declarative wrapper. Same options as the hook. Renders `children` only when the gate passes; renders `fallback` otherwise; renders `loading` while verifying. Optional `onPass(jwt, pqJwt?)` callback fires once when the gate first passes; forward both tokens to your server.
+Declarative wrapper. Same options as the hook. Renders `children` only when the gate passes; renders `fallback` when the wallet does not meet the conditions; renders `loading` while verifying. Set `errorFallback` (a node, or `(error) => node`) to show something different when no verdict came back, such as an outage or a license problem; without it an error renders `fallback`, as before. Optional `onPass(jwt, pqJwt?)` callback fires once when the gate first passes; forward both tokens to your server.
 
 ## Condition types
 
@@ -175,7 +175,9 @@ Same vocabulary as the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skye
 | `eas_attestation` | Ethereum Attestation Service templates (Coinbase Verified, Gitcoin Passport, …) |
 | `farcaster_id` | Wallet linked to a Farcaster identity |
 
-37 chains supported (the same set as SkyeGate Pro). See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list.
+37 chains supported, the same set as SkyeGate Pro: 31 EVM chains plus Solana, XRP Ledger, Bitcoin, Tron, Stellar and Sui. Set `walletType` to the wallet's chain family (`'evm'` covers all 31 EVM chains). See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list. Wallet-ownership proof covers EVM wallets.
+
+Leave `decimals` out of your conditions: the token's own decimals are always read from the chain. An `nft_ownership` condition is evaluated and signed as "holds at least one", so `expectedConditions` confirms a threshold of `0` or `1` (or none) for it, and nothing higher.
 
 ## How it works
 

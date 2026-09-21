@@ -1,9 +1,9 @@
 /**
  * @skyemeta/skyegate — condition-based content gating for Vercel / Next.js.
  *
- * SkyeGate is a SkyeMeta product. The wallet verification engine it relies on
- * — signed boolean attestations over wallet conditions — is InsumerAPI, an
- * independent product of InsumerModel. SkyeGate is powered by InsumerAPI;
+ * SkyeGate is a SkyeMeta product. It is powered by InsumerAPI, the condition-based
+ * access API (signed boolean attestations over wallet conditions), an independent
+ * product of InsumerModel. SkyeGate is powered by InsumerAPI;
  * they are separate companies.
  *
  * The SDK talks to the SkyeMeta proxy (skyemeta.com/api/verify) with a SKYE
@@ -34,7 +34,11 @@ export interface Condition {
   type: 'token_balance' | 'nft_ownership' | 'eas_attestation' | 'farcaster_id';
   /** Token / NFT contract address, or `"native"` for chain-native tokens. */
   contractAddress?: string;
-  /** Numeric chain ID for EVM chains; `"solana"` for Solana; `"xrpl"` for XRP Ledger. */
+  /**
+   * Numeric chain ID for EVM chains, or the chain name for the others: `"solana"`, `"xrpl"`,
+   * `"bitcoin"`, `"tron"`, `"stellar"`, `"sui"`. Set {@link VerifyConditionsParams.walletType} to
+   * the matching wallet kind. A numeric string (`"8453"`) matches the signed number.
+   */
   chainId?: number | string;
   /**
    * Minimum balance for `token_balance`. Prefer a decimal string (`'100'`) —
@@ -42,7 +46,11 @@ export interface Condition {
    * is accepted and converted to its decimal-string form before sending.
    */
   threshold?: number | string;
-  /** Decimals for `token_balance`. Token-specific — check the token's documentation. */
+  /**
+   * Leave this out. The token's own decimals are always read from the chain, so a value here
+   * changes nothing when it is right and is refused by the API when it is wrong. The SkyeMeta
+   * proxy removes it before forwarding, and {@link validateContentToken} ignores it.
+   */
   decimals?: number;
   /** EAS template name, e.g. `"coinbase_verified_account"`, `"gitcoin_passport_active"`. */
   template?: string;
@@ -50,17 +58,36 @@ export interface Condition {
   currency?: string;
   /** Free-form label echoed back in the attestation result. */
   label?: string;
+  /** Stellar asset code, for a non-native Stellar asset. */
+  assetCode?: string;
 }
 
+/** Which kind of wallet `address` is. Each maps to the request field InsumerAPI reads it from. */
+export type WalletType = 'evm' | 'solana' | 'xrpl' | 'bitcoin' | 'tron' | 'stellar' | 'sui';
+
+const WALLET_FIELD: Record<WalletType, string> = {
+  evm: 'wallet',
+  solana: 'solanaWallet',
+  xrpl: 'xrplWallet',
+  bitcoin: 'bitcoinWallet',
+  tron: 'tronWallet',
+  stellar: 'stellarWallet',
+  sui: 'suiWallet',
+};
+
 export interface VerifyConditionsParams {
-  /** Wallet address (EVM hex or Solana base58). */
+  /** Wallet address, in the format of its {@link walletType} (EVM hex by default). */
   address: string;
   /** One or more conditions; pass=true requires every condition to be met. */
   conditions: Condition[];
   /** Your SKYE license key (format: `SKYE-XXXX-XXXX-XXXX`). Provision one at skyemeta.com/skyegate/. */
   licenseKey: string;
-  /** `"evm"` (default) or `"solana"`. Picks which body field carries the address. */
-  walletType?: 'evm' | 'solana';
+  /**
+   * The kind of wallet `address` is: `"evm"` (default), `"solana"`, `"xrpl"`, `"bitcoin"`,
+   * `"tron"`, `"stellar"` or `"sui"`. Picks which body field carries the address. The
+   * wallet-ownership proof ({@link walletProof}) covers EVM wallets only.
+   */
+  walletType?: WalletType;
   /** Override the verification endpoint. Defaults to the production proxy. */
   endpoint?: string;
   /**
@@ -89,7 +116,10 @@ export interface VerifyConditionsResult {
   pqJwt: string | null;
   /** Full InsumerAPI response envelope, for advanced inspection. */
   raw: unknown;
-  /** Populated when the proxy or upstream returned a non-2xx or `pass:false`. */
+  /**
+   * Set when no verdict came back: the proxy or the API refused the request, or could not be
+   * reached. Always a string. A signed "not met" is `pass: false` with no `error`.
+   */
   error?: string;
 }
 
@@ -100,8 +130,10 @@ export interface ValidateContentTokenOptions {
   issuer?: string;
   /**
    * Optional replay protection: ensure the signed conditions in the JWT match
-   * the conditions you require for this route. Each expected condition must
-   * find a matching `evaluatedCondition` in the JWT's `results` array.
+   * the conditions you require for this route. Pass the same conditions you gave
+   * {@link verifyConditions}: each must match one signed result. `template` is
+   * checked through what it resolves to, `label` against the signed label, and
+   * `decimals` is ignored (it is never signed). An unknown template never matches.
    */
   expectedConditions?: Condition[];
   /** The `pqJwt` sibling returned with the JWT, if you have it. Reported as `pq` in the result. */
@@ -112,6 +144,11 @@ export interface ValidateContentTokenOptions {
    * Undefined = reported only. Install `@noble/post-quantum` to verify companions.
    */
   pqRequiredFrom?: string | Date;
+  /**
+   * ES256 key ids accepted for the JWT. Defaults to InsumerAPI's attestation signing keys
+   * (`insumer-attest-v1`, `insumer-attest-v2`); a JWT signed by any other key in the JWKS is refused.
+   */
+  allowedKids?: string[];
 }
 
 export interface ValidateContentTokenResult {
@@ -189,6 +226,8 @@ const DEFAULT_VERIFY_ENDPOINT = 'https://skyemeta.com/api/verify';
 const DEFAULT_PROOF_ENDPOINT = 'https://skyemeta.com/api/wallet-proof';
 const DEFAULT_JWKS_URL = 'https://api.insumermodel.com/.well-known/jwks.json';
 const DEFAULT_ISSUER = 'https://api.insumermodel.com';
+// Content tokens are attestation JWTs: only InsumerAPI's attestation signing keys issue them.
+const DEFAULT_ATTEST_KIDS = ['insumer-attest-v1', 'insumer-attest-v2'];
 
 // ── verifyConditions ─────────────────────────────────────────────────────
 
@@ -228,7 +267,10 @@ export async function verifyConditions(
   params: VerifyConditionsParams
 ): Promise<VerifyConditionsResult> {
   const endpoint = params.endpoint ?? DEFAULT_VERIFY_ENDPOINT;
-  const walletField = params.walletType === 'solana' ? 'solanaWallet' : 'wallet';
+  const walletField = WALLET_FIELD[params.walletType ?? 'evm'];
+  if (!walletField) {
+    return { pass: false, jwt: null, pqJwt: null, raw: null, error: `Unknown walletType "${String(params.walletType)}"` };
+  }
 
   const body: Record<string, unknown> = {
     conditions: withStringThresholds(params.conditions),
@@ -283,16 +325,29 @@ export async function verifyConditions(
       jwt: null,
       pqJwt: null,
       raw: data,
-      error: data?.error ?? `HTTP ${response.status}`,
+      error: errorText(data, response.status),
     };
   }
 
+  // A 200 that carries no signed verdict (ok:false, or no boolean pass) is not a "not met".
   const attestation = data?.data?.attestation;
+  if (data?.ok === false || typeof attestation?.pass !== 'boolean' || (attestation.pass && typeof data?.data?.jwt !== 'string')) {
+    const e = data?.error ? errorText(data, response.status) : 'No verdict in the response';
+    return { pass: false, jwt: null, pqJwt: null, raw: data, error: e };
+  }
   const jwt = data?.data?.jwt ?? null;
   const pqJwt = typeof data?.data?.pqJwt === 'string' ? data.data.pqJwt : null;
   const pass = attestation?.pass === true;
 
   return { pass, jwt, pqJwt, raw: data };
+}
+
+// The proxy passes InsumerAPI errors through as { code, message }; its own are strings.
+function errorText(data: any, status: number): string {
+  const e = data?.error;
+  if (typeof e === 'string' && e) return e;
+  if (e && typeof e.message === 'string' && e.message) return e.message;
+  return `HTTP ${status}`;
 }
 
 // ── proveWalletOwnership ─────────────────────────────────────────────────
@@ -454,15 +509,79 @@ function getJwks(url: string) {
   return jwks;
 }
 
-function compareCondition(signed: Record<string, unknown>, expected: Condition): boolean {
-  for (const key of Object.keys(expected) as (keyof Condition)[]) {
-    if (key === 'threshold') {
-      // Era-tolerant: a v1-signed JWT echoes token_balance thresholds as
-      // numbers, a v2-signed JWT as canonical decimal strings.
-      const a = canonicalThreshold(signed[key]);
-      if (a === null || a !== canonicalThreshold(expected[key])) return false;
-    } else if (signed[key] !== expected[key]) {
-      return false;
+// What each EAS template resolves to in the signed condition. Public: served by
+// GET https://api.insumermodel.com/v1/compliance/templates. A template not listed
+// here never matches, so an unknown or misspelled name fails closed.
+const EAS_TEMPLATES: Record<string, Record<string, string | number>> = {
+  coinbase_verified_account: { chainId: 8453, schemaId: '0xf8b05c79f090979bf4a80270aba232dff11a10d9ca55c4f88de95317970f0de9', attester: '0x357458739F90461b99789350868CD7CF330Dd7EE' },
+  coinbase_verified_country: { chainId: 8453, schemaId: '0x1801901fabd0e6189356b4fb52bb0ab855276d84f7ec140839fbd1f6801ca065', attester: '0x357458739F90461b99789350868CD7CF330Dd7EE' },
+  coinbase_one: { chainId: 8453, schemaId: '0x254bd1b63e0591fefa66818ca054c78627306f253f86be6023725a67ee6bf9f4', attester: '0x357458739F90461b99789350868CD7CF330Dd7EE' },
+  // The decoder method decides what "met" means (isHuman = score >= 20, getScore = any score),
+  // so it must be signed for the two Gitcoin templates to be told apart.
+  gitcoin_passport_score: { chainId: 10, decoder: '0x5558D441779Eca04A329BcD6b47830D2C6607769', decoderMethod: 'isHuman' },
+  gitcoin_passport_active: { chainId: 10, decoder: '0x5558D441779Eca04A329BcD6b47830D2C6607769', decoderMethod: 'getScore' },
+};
+
+// Hex values (addresses, schema ids) compare case-insensitively; everything else exactly.
+function sameValue(a: unknown, b: unknown): boolean {
+  if (typeof a === 'string' && typeof b === 'string' && /^0x/i.test(a) && /^0x/i.test(b)) {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+  return a === b;
+}
+
+// A numeric chain id may be written as a number or a numeric string.
+function sameChain(a: unknown, b: unknown): boolean {
+  if (a === undefined || a === null || b === undefined || b === null) return false;
+  return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
+const nfc = (v: unknown) => (typeof v === 'string' ? v.normalize('NFC') : v);
+
+/**
+ * Does one signed result (`results[i]` of the JWT) satisfy one expected condition?
+ * Every key the caller set must be vouched for by what was signed; a key that is
+ * never signed (other than `decimals`) cannot be confirmed, so it does not match.
+ */
+function matchesExpected(result: any, expected: Condition): boolean {
+  const signed = result?.evaluatedCondition;
+  if (!signed || typeof signed !== 'object') return false;
+  for (const [key, value] of Object.entries(expected) as [string, unknown][]) {
+    if (value === undefined) continue;
+    switch (key) {
+      case 'decimals':
+        continue; // never signed on v2 keys; the token's own decimals are read from the chain
+      case 'label':
+        // The label is signed on the result, not inside the condition (NFC on v2 keys).
+        if (typeof result.label !== 'string' || nfc(result.label) !== nfc(value)) return false;
+        continue;
+      case 'template': {
+        // Own properties only: 'constructor', '__proto__' etc. are not templates.
+        const t = typeof value === 'string' && Object.prototype.hasOwnProperty.call(EAS_TEMPLATES, value) ? EAS_TEMPLATES[value] : undefined;
+        if (!t || signed.type !== 'eas_attestation') return false;
+        for (const [f, v] of Object.entries(t)) {
+          if (f === 'chainId' ? !sameChain(signed.chainId, v) : !sameValue(signed[f], v)) return false;
+        }
+        continue;
+      }
+      case 'chainId':
+        if (!sameChain(signed.chainId, value)) return false;
+        continue;
+      case 'threshold':
+        if (signed.type === 'nft_ownership') {
+          // NFT ownership is signed as "more than 0 held" (threshold 0). It vouches for
+          // "at least one", so only a threshold of 0 or 1 can be confirmed.
+          const want = canonicalThreshold(value);
+          if (want !== '0' && want !== '1') return false;
+          continue;
+        }
+        {
+          const a = canonicalThreshold(signed.threshold);
+          if (a === null || a !== canonicalThreshold(value)) return false;
+        }
+        continue;
+      default:
+        if (!sameValue(signed[key], value)) return false;
     }
   }
   return true;
@@ -488,8 +607,9 @@ function compareCondition(signed: Record<string, unknown>, expected: Condition):
  * import { validateContentToken } from '@skyemeta/skyegate';
  *
  * export async function POST(req: Request) {
- *   const { jwt } = await req.json();
+ *   const { jwt, pqJwt } = await req.json();
  *   const result = await validateContentToken(jwt, {
+ *     pqJwt, // the post-quantum companion returned beside jwt; reported as result.pq
  *     expectedConditions: [{ type: 'farcaster_id' }],
  *   });
  *   if (!result.pass) {
@@ -509,10 +629,20 @@ export async function validateContentToken(
 
   const jwksUrl = options.jwksUrl ?? DEFAULT_JWKS_URL;
   const issuer = options.issuer ?? DEFAULT_ISSUER;
+  const kids = options.allowedKids ?? DEFAULT_ATTEST_KIDS;
+
+  // A malformed cutoff is the caller's configuration error: report it on every call, not only
+  // when the companion happens to be missing, and never as a thrown exception.
+  if (options.pqRequiredFrom !== undefined && isNaN(new Date(options.pqRequiredFrom).getTime())) {
+    return { valid: false, pass: false, error: `pqRequiredFrom is not a valid date: ${String(options.pqRequiredFrom)}` };
+  }
 
   let payload: JWTPayload & { pass?: boolean; results?: unknown[] };
   try {
     const verified = await jwtVerify(jwt, getJwks(jwksUrl), { issuer, algorithms: ['ES256'] });
+    if (!kids.includes(String(verified.protectedHeader.kid))) {
+      return { valid: false, pass: false, error: `JWT is signed by "${String(verified.protectedHeader.kid)}", not an attestation key` };
+    }
     payload = verified.payload as typeof payload;
   } catch (err) {
     return {
@@ -524,7 +654,7 @@ export async function validateContentToken(
 
   // Post-quantum companion: always reported, on every outcome below. Refuted always fails;
   // absent/unverifiable fail only past the caller's own pqRequiredFrom cutoff.
-  const pq = await verifyPqCompanion(options.pqJwt, payload as Record<string, unknown>, jwksUrl);
+  const pq = await verifyPqCompanion(options.pqJwt as unknown, payload as Record<string, unknown>, jwksUrl);
 
   if (payload.pass !== true) {
     return { valid: true, pass: false, payload, pq, error: 'Verification did not pass' };
@@ -535,10 +665,7 @@ export async function validateContentToken(
     const allMatched = options.expectedConditions.every((expected) =>
       signed.some(
         (r) =>
-          r &&
-          typeof r === 'object' &&
-          r.evaluatedCondition &&
-          compareCondition(r.evaluatedCondition, expected)
+          r && typeof r === 'object' && matchesExpected(r, expected)
       )
     );
     if (!allMatched) {

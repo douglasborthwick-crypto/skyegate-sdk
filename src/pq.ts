@@ -24,14 +24,23 @@ export interface PqResult {
   reason?: string;
 }
 
+// A content token is an attestation JWT, so its companion must be signed by the attestation
+// post-quantum key. The JWKS also publishes a trust-profile key; a companion under it is refused.
+const EXPECTED_PQ_KID = 'insumer-attest-pq1';
+
 type MlDsa = { verify: (sig: Uint8Array, msg: Uint8Array, publicKey: Uint8Array) => boolean };
 let mlDsaPromise: Promise<MlDsa | null> | undefined;
 async function loadMlDsa(): Promise<MlDsa | null> {
   if (!mlDsaPromise) {
     mlDsaPromise = (async () => {
       try {
+        // The optional peer is loaded at run time. A bundler that sees `import(name)` with a
+        // variable replaces it with an empty context that always throws (webpack, as used by
+        // Next.js), so the companion would never verify. These comments tell webpack,
+        // Turbopack and Vite to leave the import to the runtime, which resolves it from
+        // node_modules like any other package.
         const name = '@noble/post-quantum/ml-dsa.js';
-        const mod = (await import(/* @vite-ignore */ name)) as { ml_dsa65?: MlDsa };
+        const mod = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ name)) as { ml_dsa65?: MlDsa };
         return mod.ml_dsa65 ?? null;
       } catch {
         return null;
@@ -80,11 +89,14 @@ async function fetchPqKey(jwksUrl: string, kid: string): Promise<Uint8Array> {
  * Never throws; every outcome is a status.
  */
 export async function verifyPqCompanion(
-  pqJwt: string | undefined,
+  pqJwt: unknown,
   classicalPayload: Record<string, unknown>,
   jwksUrl: string,
 ): Promise<PqResult> {
-  if (!pqJwt) return { status: 'absent', reason: 'No post-quantum companion on this response' };
+  if (pqJwt === undefined || pqJwt === null || pqJwt === '') {
+    return { status: 'absent', reason: 'No post-quantum companion on this response' };
+  }
+  if (typeof pqJwt !== 'string') return { status: 'refuted', reason: 'pqJwt must be a string' };
   const parts = pqJwt.split('.');
   if (parts.length !== 3) return { status: 'refuted', reason: 'pqJwt is not a 3-segment compact JWS' };
   let header: Record<string, unknown>;
@@ -95,9 +107,16 @@ export async function verifyPqCompanion(
   } catch {
     return { status: 'refuted', reason: 'pqJwt header or payload is not valid JSON' };
   }
+  const isObject = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isObject(header) || !isObject(payload)) {
+    return { status: 'refuted', reason: 'pqJwt header and payload must be JSON objects' };
+  }
   const kid = typeof header.kid === 'string' ? header.kid : undefined;
   if (header.alg !== 'ML-DSA-65' || !kid) {
     return { status: 'refuted', kid, reason: `pqJwt header must carry alg ML-DSA-65 and a kid (got ${String(header.alg)})` };
+  }
+  if (kid !== EXPECTED_PQ_KID) {
+    return { status: 'refuted', kid, reason: `pqJwt is signed by "${kid}"; a content token's companion must be signed by "${EXPECTED_PQ_KID}"` };
   }
   const mlDsa = await loadMlDsa();
   if (!mlDsa) {
