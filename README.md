@@ -175,7 +175,7 @@ Same vocabulary as the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skye
 | `eas_attestation` | Ethereum Attestation Service templates (Coinbase Verified, Gitcoin Passport, …) |
 | `farcaster_id` | Wallet linked to a Farcaster identity |
 
-37 chains supported, the same set as SkyeGate Pro: 31 EVM chains plus Solana, XRP Ledger, Bitcoin, Tron, Stellar and Sui. Set `walletType` to the wallet's chain family (`'evm'` covers all 31 EVM chains). See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list. Wallet-ownership proof covers EVM wallets.
+34 chains supported for gating, the same set as SkyeGate Pro: 31 EVM chains plus Solana, Sui and Tron. Set `walletType` to the wallet's chain family (`'evm'` covers all 31 EVM chains). Every one of them proves wallet ownership with `proveWalletOwnership`. XRP Ledger, Bitcoin and Stellar wallets cannot sign an ownership proof, so a licensed call naming one is refused. See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the full list.
 
 Leave `decimals` out of your conditions: the token's own decimals are always read from the chain. An `nft_ownership` condition is evaluated and signed as "holds at least one", so `expectedConditions` confirms a threshold of `0` or `1` (or none) for it, and nothing higher.
 
@@ -210,7 +210,19 @@ Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently 
 
 - **License key exposure.** `NEXT_PUBLIC_SKYE_LICENSE_KEY` is a public env var by design. The proxy auto-binds your key to your production domain on first use; subsequent calls from any other apex are rejected. To move a key to a different domain, use the self-serve **Move License to New Domain** flow at [skyemeta.com/account](https://skyemeta.com/account/).
 - **Cross-condition replay protection.** Pass `expectedConditions` to `validateContentToken` to ensure a JWT earned for one route can't unlock another. This scopes a token to a condition; it does not bind it to whoever presents it. See **Wallet ownership** below.
-- **Wallet ownership.** The address passed to `verifyConditions` is supplied by the caller. The JWT attests that *this address* meets the conditions, signed by InsumerAPI and verified against its JWKS. It does **not** attest that whoever presents the JWT controls that address, and `validateContentToken` does not bind the token to its presenter. Addresses meeting a given condition are public chain state. The proxy **requires** proof of control for licensed EVM calls: call `proveWalletOwnership` after the wallet connects and pass the resulting token as `walletProof` to `verifyConditions` — the proxy verifies an EIP-191 signature (EIP-1271/6492 for smart wallets) over a one-time, domain-bound challenge before attesting, and rejects licensed EVM calls without it (403 `wallet_proof_required`). Solana calls are not enforced. Note the JWT itself remains a bearer token: `validateContentToken` still does not bind it to its presenter, so keep JWT handling server-side and treat short expiry as load-bearing.
+- **Wallet ownership.** The address passed to `verifyConditions` is supplied by the caller. The JWT attests that *this address* meets the conditions, signed by InsumerAPI and verified against its JWKS. It does **not** attest that whoever presents the JWT controls that address, and `validateContentToken` does not bind the token to its presenter. Addresses meeting a given condition are public chain state. The proxy **requires** proof of control for licensed calls: call `proveWalletOwnership` after the wallet connects and pass the resulting token as `walletProof` to `verifyConditions`. The proxy verifies the wallet's signature over a one-time, domain-bound challenge before attesting: EIP-191 for EVM (EIP-1271/6492 for smart wallets), ed25519 for Solana, the personal-message signature for Sui (ed25519, secp256k1 or secp256r1 accounts), and `signMessageV2` for Tron. A licensed call without it is rejected (403 `wallet_proof_required`), and one naming an XRP Ledger, Bitcoin or Stellar wallet is rejected too (403 `wallet_proof_unsupported`). A proof minted on a dev host (localhost, `*.vercel.app`) only works on a dev host. Note the JWT itself remains a bearer token: `validateContentToken` still does not bind it to its presenter, so keep JWT handling server-side and treat short expiry as load-bearing.
+
+  For a non-EVM wallet, pass `walletType` and a `signMessage` callback that returns the wallet's own signature:
+
+  ```ts
+  // Solana (Wallet Standard / Phantom): the 64 signature bytes
+  const proof = await proveWalletOwnership({
+    address: solanaAddress,
+    walletType: 'solana',
+    signMessage: async (m) => (await window.phantom.solana.signMessage(new TextEncoder().encode(m), 'utf8')).signature,
+  });
+  // Sui: the `signature` from sui:signPersonalMessage. Tron: tronWeb.trx.signMessageV2(m).
+  ```
 - **JWT freshness.** JWTs are short-lived; `validateContentToken` enforces the `exp` claim via `jose`. Each verification produces a fresh JWT.
 - **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind — handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
 

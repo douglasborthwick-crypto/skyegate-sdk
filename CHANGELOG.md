@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.6
+
+- `proveWalletOwnership` takes `walletType`: `'evm'` (default), `'solana'`, `'sui'` or `'tron'`. A
+  non-EVM wallet signs the challenge through `signMessage`, which may return the wallet's own format:
+  a `Uint8Array` or base64 string for Solana, the `signature` string for Sui, the hex string for Tron.
+- Documentation: which wallets prove ownership, and that XRP Ledger, Bitcoin and Stellar wallets are
+  refused by a licensed gate.
+
 ## 0.4.5
 
 - `validateContentToken` matches `expectedConditions` against the whole signed result. The EAS

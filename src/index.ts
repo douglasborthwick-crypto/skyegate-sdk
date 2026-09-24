@@ -84,8 +84,9 @@ export interface VerifyConditionsParams {
   licenseKey: string;
   /**
    * The kind of wallet `address` is: `"evm"` (default), `"solana"`, `"xrpl"`, `"bitcoin"`,
-   * `"tron"`, `"stellar"` or `"sui"`. Picks which body field carries the address. The
-   * wallet-ownership proof ({@link walletProof}) covers EVM wallets only.
+   * `"tron"`, `"stellar"` or `"sui"`. Picks which body field carries the address. EVM,
+   * Solana, Sui and Tron wallets can prove ownership ({@link walletProof}); XRPL, Bitcoin
+   * and Stellar wallets cannot, and a gate that requires proof refuses them.
    */
   walletType?: WalletType;
   /** Override the verification endpoint. Defaults to the production proxy. */
@@ -98,8 +99,9 @@ export interface VerifyConditionsParams {
   domain?: string;
   /**
    * Wallet ownership proof token from {@link proveWalletOwnership}. Proves the
-   * person presenting the address actually controls it — without it, the
-   * attestation only says the address meets the conditions. EVM wallets only.
+   * person presenting the address actually controls it; without it, the
+   * attestation only says the address meets the conditions. EVM, Solana, Sui
+   * and Tron wallets.
    */
   walletProof?: string;
 }
@@ -357,20 +359,33 @@ export interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
 }
 
+/** Wallet families that can sign an ownership proof. */
+export type ProvableWalletType = 'evm' | 'solana' | 'sui' | 'tron';
+
 export interface ProveWalletOwnershipParams {
-  /** The EVM wallet address to prove control of. */
+  /** The wallet address to prove control of. */
   address: string;
+  /**
+   * The kind of wallet `address` is: `"evm"` (default), `"solana"`, `"sui"` or
+   * `"tron"`. Non-EVM wallets need a `signMessage` callback.
+   */
+  walletType?: ProvableWalletType;
   /**
    * An EIP-1193 provider (e.g. `window.ethereum`) used to request the
    * signature. Ignored when `signMessage` is supplied.
    */
   provider?: Eip1193Provider;
   /**
-   * Bring-your-own signer: given the challenge message, return the signature.
-   * Use this with wagmi (`signMessageAsync({ message })`), viem wallet
-   * clients, Privy, etc.
+   * Bring-your-own signer: given the challenge message, return the signature
+   * in the wallet's own format.
+   * - EVM: the hex signature, e.g. wagmi `signMessageAsync({ message })`,
+   *   viem wallet clients, Privy.
+   * - Solana: the 64 signature bytes from Wallet Standard `signMessage`
+   *   (a `Uint8Array`, or its base64 string).
+   * - Sui: the `signature` string from `sui:signPersonalMessage`.
+   * - Tron: the hex string from TronLink `tronWeb.trx.signMessageV2(message)`.
    */
-  signMessage?: (message: string) => Promise<string>;
+  signMessage?: (message: string) => Promise<string | Uint8Array>;
   /** Domain to stamp into the challenge. Defaults to `window.location.hostname`. */
   domain?: string;
   /** Override the proof endpoint. Defaults to the production proxy. */
@@ -396,7 +411,9 @@ export interface ProveWalletOwnershipResult {
  * directly — it never passes through your server, and the verification stays
  * an air gap: your server still only sees the address and the signed boolean.
  * Smart-contract wallets (e.g. Coinbase Smart Wallet passkeys) are verified
- * on-chain via EIP-1271/6492.
+ * on-chain via EIP-1271/6492. Solana, Sui and Tron wallets prove the same way
+ * with their own message signature: pass `walletType` and a `signMessage`
+ * callback.
  *
  * The token is session-scoped: prove once when the wallet connects, then pass
  * the token to every {@link verifyConditions} call for the rest of the visit.
@@ -427,8 +444,14 @@ export async function proveWalletOwnership(
     params.domain ??
     (typeof window !== 'undefined' && window.location ? window.location.hostname : undefined);
 
-  if (!params.signMessage && !params.provider) {
-    return { proofToken: null, error: 'Pass a provider (window.ethereum) or a signMessage callback' };
+  const family: ProvableWalletType = params.walletType ?? 'evm';
+  if (!params.signMessage && (!params.provider || family !== 'evm')) {
+    return {
+      proofToken: null,
+      error: family === 'evm'
+        ? 'Pass a provider (window.ethereum) or a signMessage callback'
+        : `Pass a signMessage callback for ${family} wallets`,
+    };
   }
 
   let challenge: { challengeId?: string; message?: string; error?: string };
@@ -436,7 +459,7 @@ export async function proveWalletOwnership(
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'challenge', wallet: params.address, domain }),
+      body: JSON.stringify({ action: 'challenge', wallet: params.address, family, domain }),
     });
     challenge = await res.json();
     if (!res.ok || !challenge.challengeId || !challenge.message) {
@@ -452,7 +475,8 @@ export async function proveWalletOwnership(
   let signature: string;
   try {
     if (params.signMessage) {
-      signature = await params.signMessage(challenge.message);
+      const signed = await params.signMessage(challenge.message);
+      signature = typeof signed === 'string' ? signed : toBase64(signed);
     } else {
       // personal_sign takes the message hex-encoded; wallets render the UTF-8.
       const hex =
@@ -480,6 +504,7 @@ export async function proveWalletOwnership(
         action: 'prove',
         challengeId: challenge.challengeId,
         wallet: params.address,
+        family,
         signature,
       }),
     });
@@ -494,6 +519,12 @@ export async function proveWalletOwnership(
       error: err instanceof Error ? err.message : 'Network error reaching proof endpoint',
     };
   }
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return typeof btoa === 'function' ? btoa(binary) : Buffer.from(bytes).toString('base64');
 }
 
 // ── validateContentToken ─────────────────────────────────────────────────
