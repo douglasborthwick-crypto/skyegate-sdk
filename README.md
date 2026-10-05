@@ -171,7 +171,7 @@ Same vocabulary as the [SkyeGate Pro WordPress plugin](https://skyemeta.com/skye
 | Type | What it checks |
 |---|---|
 | `token_balance` | ERC-20 / SPL / native balance ≥ threshold on a chain |
-| `nft_ownership` | ERC-721 / ERC-1155 / SPL NFT ownership |
+| `nft_ownership` | ERC-721 / SPL NFT ownership |
 | `eas_attestation` | Ethereum Attestation Service templates (Coinbase Verified, Gitcoin Passport, …) |
 | `farcaster_id` | Wallet linked to a Farcaster identity |
 

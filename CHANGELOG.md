@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.7
+
+- Documentation: `nft_ownership` checks ERC-721 and SPL NFT ownership. ERC-1155 is no longer listed.
+  No code changes.
+
 ## 0.4.6
 
 - `proveWalletOwnership` takes `walletType`: `'evm'` (default), `'solana'`, `'sui'` or `'tron'`. A
