@@ -46,7 +46,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/douglasborthwick-crypto/skyegate-sdk.git"
+    "url": "git+https://github.com/skyemeta/skyegate-sdk.git"
   },
   "homepage": "https://skyemeta.com/skyegate/vercel/",
   "engines": {
