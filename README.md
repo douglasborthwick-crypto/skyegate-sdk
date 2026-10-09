@@ -1,23 +1,25 @@
 # @skyemeta/skyegate
 
-**SkyeGate Pro for Vercel.** Condition-based content gating for Next.js apps — wallet-verified access to pages, posts, files, or API routes. Gate on token balance, NFT ownership, EAS attestation, or Farcaster identity. Companion to the [SkyeGate WordPress plugin](https://skyemeta.com/skyegate/) — same SKYE license key, same conditions, same proxy. **One license, two stacks.**
+[![npm](https://img.shields.io/npm/v/@skyemeta/skyegate?color=0a1628&label=npm)](https://www.npmjs.com/package/@skyemeta/skyegate) [![license](https://img.shields.io/github/license/skyemeta/skyegate-sdk?color=0a1628)](LICENSE) [![release](https://img.shields.io/github/v/release/skyemeta/skyegate-sdk?color=0a1628)](https://github.com/skyemeta/skyegate-sdk/releases)
 
-> **Powered by [InsumerAPI](https://insumermodel.com/developers/), the condition-based access API.** SkyeGate is a [SkyeMeta](https://skyemeta.com) product; InsumerAPI is an independent product of [InsumerModel](https://insumermodel.com). Two companies: send a condition in, get a signed answer out.
+**SkyeGate Pro for Vercel.** Condition-based content gating for Next.js apps: wallet-verified access to pages, posts, files, or API routes. Gate on token balance, NFT ownership, EAS attestation, or Farcaster identity. Companion to the [SkyeGate WordPress plugin](https://skyemeta.com/skyegate/): same SKYE license key, same conditions, same proxy. **One license, two stacks.**
+
+> **Powered by [InsumerAPI](https://insumermodel.com/developers/), the condition-based access API.** SkyeGate is a [Skye Meta](https://skyemeta.com) product; InsumerAPI is an independent product of [InsumerModel](https://insumermodel.com). Two companies: send a condition in, get a signed answer out.
 
 ```bash
 npm install @skyemeta/skyegate
 ```
 
-Bring your own wallet stack — wagmi, RainbowKit, ConnectKit, Privy, whatever your Next.js app already uses. This SDK only provides the gating layer.
+Bring your own wallet stack: wagmi, RainbowKit, ConnectKit, Privy, whatever your Next.js app already uses. This SDK only provides the gating layer.
 
 ## Quick start
 
 Get a key:
 
-- **[Annual — $350/yr](https://buy.stripe.com/8x26oA9F6eWAeAC7S804805)** (save 40%)
-- [Monthly — $49/mo](https://buy.stripe.com/eVqbIU18A6q43VY7S804800)
+- **[Annual, $350/yr](https://buy.stripe.com/8x26oA9F6eWAeAC7S804805)** (save 40%)
+- [Monthly, $49/mo](https://buy.stripe.com/eVqbIU18A6q43VY7S804800)
 
-Same key works on the [WordPress plugin](https://skyemeta.com/skyegate/) and this SDK — one license, two stacks. See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the comparison and FAQ.
+Same key works on the [WordPress plugin](https://skyemeta.com/skyegate/) and this SDK: one license, two stacks. See [skyemeta.com/skyegate](https://skyemeta.com/skyegate/) for the comparison and FAQ.
 
 ### 1. Client: verify the wallet
 
@@ -94,7 +96,7 @@ export async function POST(req: Request) {
 }
 ```
 
-The browser only ever receives the gated content after the JWT clears server-side validation. The text isn't in the page source or the bundle — it's fetched only after a signed verification.
+The browser only ever receives the gated content after the JWT clears server-side validation. The text isn't in the page source or the bundle; it's fetched only after a signed verification.
 
 ### If you cache the result, key it on the JWT
 
@@ -124,23 +126,23 @@ Low-level imperative call. The React hook + component use this internally.
 | `licenseKey` | `string` | Your `SKYE-XXXX-XXXX-XXXX` key |
 | `walletType` | `'evm'` \| `'solana'` \| `'xrpl'` \| `'bitcoin'` \| `'tron'` \| `'stellar'` \| `'sui'` | Default `'evm'`. Picks which request field carries the address |
 | `endpoint` | `string` | Override the proxy URL (advanced) |
-| `walletProof` | `string` | Proof token from `proveWalletOwnership`. **Required for licensed EVM calls** — the proxy rejects them with 403 `wallet_proof_required` without it. See **Wallet ownership** below |
+| `walletProof` | `string` | Proof token from `proveWalletOwnership`. **Required for licensed EVM calls**: the proxy rejects them with 403 `wallet_proof_required` without it. See **Wallet ownership** below |
 
 Returns `{ pass, jwt, pqJwt, raw, error? }`. `error` is always a string, and is set only when no verdict came back (a refused request, a license problem, an outage); a signed "not met" is `pass: false` with no `error`. On `pass:true`, hand `jwt` and `pqJwt` (the post-quantum companion, when present) to your server endpoint and call `validateContentToken` there with `pqJwt` in the options.
 
 ### `proveWalletOwnership(params)` → `Promise<ProveWalletOwnershipResult>`
 
-Proves the person present controls the wallet — not just that an address was supplied. Requests a one-time challenge, has the wallet sign it (EIP-191 `personal_sign`; free, gasless, no transaction), and exchanges the signature for a short-lived proof token. Smart-contract wallets (e.g. Coinbase Smart Wallet passkeys) are verified on-chain via EIP-1271/6492. The signature goes from the visitor's browser to the proof endpoint directly — it never passes through your server.
+Proves the person present controls the wallet, not just that an address was supplied. Requests a one-time challenge, has the wallet sign it (EIP-191 `personal_sign`; free, gasless, no transaction), and exchanges the signature for a short-lived proof token. Smart-contract wallets (e.g. Coinbase Smart Wallet passkeys) are verified on-chain via EIP-1271/6492. The signature goes from the visitor's browser to the proof endpoint directly; it never passes through your server.
 
 | Field | Type | Notes |
 |---|---|---|
 | `address` | `string` | The EVM wallet address to prove |
 | `provider` | `Eip1193Provider` | e.g. `window.ethereum`; used to request the signature |
-| `signMessage` | `(message: string) => Promise<string>` | BYO signer (wagmi `signMessageAsync`, viem wallet client, Privy) — takes precedence over `provider` |
+| `signMessage` | `(message: string) => Promise<string>` | BYO signer (wagmi `signMessageAsync`, viem wallet client, Privy); takes precedence over `provider` |
 | `domain` | `string` | Defaults to `window.location.hostname` |
 | `proofEndpoint` | `string` | Override the proof URL (advanced) |
 
-Returns `{ proofToken, expiresInSec?, error? }`. The token is session-scoped — prove once when the wallet connects, then pass it as `walletProof` to every `verifyConditions` call for the rest of the visit. EVM wallets only in this wave.
+Returns `{ proofToken, expiresInSec?, error? }`. The token is session-scoped: prove once when the wallet connects, then pass it as `walletProof` to every `verifyConditions` call for the rest of the visit. EVM wallets only in this wave.
 
 ### `validateContentToken(jwt, options?)` → `Promise<ValidateContentTokenResult>`
 
@@ -190,7 +192,7 @@ skyemeta.com/api/wallet-proof  ← one-time challenge; the wallet signs it
   ↓                              proof token comes back
   ↓ verifyConditions(address, conditions, licenseKey, walletProof)
   ↓
-skyemeta.com/api/verify   ← SkyeMeta proxy validates SKYE key + domain
+skyemeta.com/api/verify   ← Skye Meta proxy validates SKYE key + domain
   ↓                         + the ownership proof for the address
   ↓
 api.insumermodel.com      ← InsumerAPI returns a signed boolean; no balances leak
@@ -204,7 +206,7 @@ validateContentToken(jwt, { pqJwt }) ← jose + JWKS, signature + issuer + expir
 gated content delivered
 ```
 
-Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently verifiable by any third party. **Trust the math, not a company — including us.** The wallet's actual balances never reach your server or your customers; only the signed yes-or-no on whether the condition was met.
+Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently verifiable by any third party. **Trust the math, not a company, including us.** The wallet's actual balances never reach your server or your customers; only the signed yes-or-no on whether the condition was met.
 
 ## Security notes
 
@@ -224,7 +226,7 @@ Every result is cryptographically signed (ECDSA P-256 + JWKS) and independently 
   // Sui: the `signature` from sui:signPersonalMessage. Tron: tronWeb.trx.signMessageV2(m).
   ```
 - **JWT freshness.** JWTs are short-lived; `validateContentToken` enforces the `exp` claim via `jose`. Each verification produces a fresh JWT.
-- **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind — handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
+- **Dev / preview hosts.** `localhost`, `127.0.0.1`, `*.vercel.app`, and `*.local` skip the domain bind. Handy for local dev and preview deploys, but means anyone with your key could test on `*.vercel.app`. Treat license keys as you would any per-domain credential.
 
 ## Comparison with `@skyemeta/skyegate` for WordPress
 
